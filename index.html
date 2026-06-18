@@ -1153,7 +1153,7 @@
   async function submitAuth(){
     const u=(gUser.value||"").trim().toLowerCase();
     const p=gPass.value||"";
-    if(!/^[a-z0-9_.-]{3,20}$/.test(u)){ gErr.textContent="El usuario debe tener 3 a 20 caracteres (letras, números, . _ -)."; return; }
+    if(!u){ gErr.textContent="Escribe un nombre de usuario."; return; }
     if(p.length<6){ gErr.textContent="La contraseña debe tener al menos 6 caracteres."; return; }
     gErr.textContent=""; setBusy(true);
     try{
