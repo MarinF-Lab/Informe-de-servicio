@@ -35,7 +35,7 @@
   .reset-btn{background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;cursor:pointer;padding:7px 12px;border-radius:999px;font-family:inherit}
   .reset-btn:hover{color:var(--ink);border-color:var(--pine-soft)}
 
-  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
   .pad{padding:18px}
 
   .sw{padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -56,7 +56,7 @@
   .cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr)}
   .cal-head{padding:12px 8px 4px;gap:2px}
   .cal-head span{text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
-  .cal-grid{padding:4px 8px 12px;gap:2px}
+  .cal-grid{padding:4px 8px 12px;gap:2px;align-items:start}
   .cell{aspect-ratio:1;border:none;background:none;border-radius:11px;cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-size:14px;color:var(--ink);transition:background .12s}
   .cell.empty{visibility:hidden}
   .cell:hover{background:var(--base)}
@@ -677,6 +677,8 @@
       const dots=hasH?`<span class="dots"><span class="dot-h"></span></span>`:"";
       cells+=`<button class="cell${hasH?' has':''}${isToday?' today':''}${isSel?' sel':''}" data-day="${s}">${d}${dots}</button>`;
     }
+    const filled=offset+days, padTo=Math.ceil(filled/7)*7;
+    for(let i=filled;i<padTo;i++) cells+=`<button class="cell empty"></button>`;
     const outDays=[...new Set(monthEntries(viewY,viewM).map(e=>e.date))].sort();
     const outHtml=outDays.length? outDays.map(ds=>{
       const dd=entriesOn(ds), tot=dd.reduce((s,e)=>s+e.hours*60+e.minutes,0);
