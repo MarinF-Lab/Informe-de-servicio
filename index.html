@@ -53,10 +53,8 @@
   .nav button:hover{background:var(--base);border-color:var(--pine-soft)}
   .nav .label{font-family:'Fraunces',serif;font-size:17px;font-weight:500;text-transform:capitalize}
 
-  .cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr)}
-  .cal-head{padding:12px 8px 4px;gap:2px}
-  .cal-head span{text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
-  .cal-grid{padding:4px 8px 12px;gap:2px;align-items:start}
+  .cal-wrap{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 12px;gap:2px;align-items:start}
+  .cal-hd{text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 0 4px;display:flex;align-items:center;justify-content:center}
   .cell{aspect-ratio:1;border:none;background:none;border-radius:11px;cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-size:14px;color:var(--ink);transition:background .12s}
   .cell.empty{visibility:hidden}
   .cell:hover{background:var(--base)}
@@ -696,8 +694,7 @@
         <div class="label">${MESES[viewM]} ${viewY}</div>
         <button id="nm" aria-label="Mes siguiente">›</button>
       </div>
-      <div class="cal-head">${DIAS_ABR.map(d=>`<span>${d}</span>`).join("")}</div>
-      <div class="cal-grid">${cells}</div>
+      <div class="cal-wrap">${DIAS_ABR.map(d=>`<span class="cal-hd">${d}</span>`).join("")}${cells}</div>
       <div class="month-total"><span>Total del mes</span><b>${fmtDur(monthMin(viewY,viewM))}</b></div>
     </section>
     ${paceCardHtml(paceInfo(viewY,viewM))}
