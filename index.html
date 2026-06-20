@@ -54,8 +54,8 @@
   .nav .label{font-family:'Fraunces',serif;font-size:17px;font-weight:500;text-transform:capitalize}
 
   .cal-wrap{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 12px;gap:2px;align-items:start}
-  .cal-hd{text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 0 4px;display:flex;align-items:center;justify-content:center}
-  .cell{aspect-ratio:1;border:none;background:none;border-radius:11px;cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-size:14px;color:var(--ink);transition:background .12s}
+  .cal-hd{min-width:0;overflow:hidden;text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 0 4px;display:flex;align-items:center;justify-content:center}
+  .cell{min-width:0;min-height:0;aspect-ratio:1;border:none;background:none;border-radius:11px;cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-size:14px;color:var(--ink);transition:background .12s}
   .cell.empty{visibility:hidden}
   .cell:hover{background:var(--base)}
   .cell.has{background:var(--pine-tint)}
