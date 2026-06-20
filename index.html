@@ -54,7 +54,7 @@
   .nav .label{font-family:'Fraunces',serif;font-size:17px;font-weight:500;text-transform:capitalize}
 
   .cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr)}
-  .cal-head{padding:12px 10px 4px}
+  .cal-head{padding:12px 8px 4px;gap:2px}
   .cal-head span{text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
   .cal-grid{padding:4px 8px 12px;gap:2px}
   .cell{aspect-ratio:1;border:none;background:none;border-radius:11px;cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-size:14px;color:var(--ink);transition:background .12s}
@@ -156,14 +156,8 @@
   .lchart .pace{stroke:var(--muted);stroke-dasharray:3 3;opacity:.55;vector-effect:non-scaling-stroke}
   .lchart .xlab{fill:var(--muted);font-size:9px;font-family:'Inter',sans-serif}
   .lchart .hit{fill:transparent;cursor:pointer}
-  /* comparación mensual (actual vs anterior) */
-  .cmp{display:flex;gap:22px;align-items:flex-end;justify-content:center;height:140px;margin:8px 0 0}
-  .cmp-bar{flex:1;max-width:96px;display:flex;flex-direction:column;align-items:center;height:100%}
-  .cmp-track{flex:1;width:100%;max-width:62px;display:flex;align-items:flex-end;background:var(--line);border-radius:8px 8px 0 0;overflow:hidden}
-  .cmp-track>span{display:block;width:100%;min-height:3px;background:linear-gradient(180deg,var(--pine-soft),var(--pine));transition:height .45s cubic-bezier(.3,.8,.3,1)}
-  .cmp-bar.cur .cmp-track>span{background:linear-gradient(180deg,var(--gold),#a87f1f)}
-  .cmp-v{font-family:'Fraunces',serif;font-weight:500;font-size:13px;margin-top:7px}
-  .cmp-l{font-size:11px;color:var(--muted);text-transform:capitalize;margin-top:1px}
+  /* comparación mensual - gráfico de líneas */
+  .lchart .vlab{fill:var(--ink);font-size:10.5px;font-family:'Fraunces',serif;font-weight:600}
 
   .course{display:flex;align-items:center;gap:12px;padding:13px 0;border-top:1px solid var(--line)}
   .course:first-of-type{border-top:none}
@@ -531,6 +525,28 @@
       ${pace}${dots}${labs}${hit}</svg>`;
   }
 
+  function monthCmpLineSVG(prevMin, curMin, pmLabel, cmLabel){
+    const W=300,H=110,PX=60,T=16,B=38;
+    const iw=W-2*PX, ih=H-T-B;
+    const maxV=Math.max(1,prevMin,curMin);
+    const x0=PX, x1=W-PX;
+    const y0=T+ih-(Math.max(0,prevMin)/maxV)*ih;
+    const y1=T+ih-(Math.max(0,curMin)/maxV)*ih;
+    const base=T+ih;
+    const area=`${x0},${base} ${x0},${y0.toFixed(1)} ${x1},${y1.toFixed(1)} ${x1},${base}`;
+    const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+    return `<svg class="lchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Comparación mensual">
+      <polygon class="area" points="${area}"/>
+      <polyline class="line" points="${x0},${y0.toFixed(1)} ${x1},${y1.toFixed(1)}"/>
+      <circle class="dot" cx="${x0}" cy="${y0.toFixed(1)}" r="3.5"/>
+      <circle class="dot cur" cx="${x1}" cy="${y1.toFixed(1)}" r="5"/>
+      <text class="xlab" x="${x0}" y="${H-22}" text-anchor="middle">${cap(pmLabel)}</text>
+      <text class="vlab" x="${x0}" y="${H-8}" text-anchor="middle">${prevMin?fmtDur(prevMin):"—"}</text>
+      <text class="xlab" x="${x1}" y="${H-22}" text-anchor="middle">${cap(cmLabel)}</text>
+      <text class="vlab" x="${x1}" y="${H-8}" text-anchor="middle">${curMin?fmtDur(curMin):"—"}</text>
+    </svg>`;
+  }
+
   function paceInfo(y,m){
     const goalMin=state.goalHours*60;
     if(!goalMin) return null;
@@ -767,7 +783,6 @@
     const mpct=gm?Math.min(100,Math.round(cmMin/gm*100)):0;
     let pmM=today.getMonth()-1, pmY=today.getFullYear(); if(pmM<0){pmM=11;pmY--;}
     const prevMin=monthMin(pmY,pmM);
-    const cmpMax=Math.max(1,prevMin,cmMin,gm);
     const delta=cmMin-prevMin;
     const svcLabels = ms.map(o=>MES_ABR[o.m][0].toUpperCase());
 
@@ -778,10 +793,7 @@
 
     const monthCmpChart = (cmMin>0||prevMin>0||gm)? `
       <div class="glab" style="margin-top:16px">${MESES[pmM]} vs ${MESES[today.getMonth()]}</div>
-      <div class="cmp">
-        <div class="cmp-bar"><div class="cmp-track"><span style="height:${Math.round(prevMin/cmpMax*100)}%"></span></div><div class="cmp-v">${fmtDur(prevMin)}</div><div class="cmp-l">${MES_ABR[pmM]}</div></div>
-        <div class="cmp-bar cur"><div class="cmp-track"><span style="height:${Math.round(cmMin/cmpMax*100)}%"></span></div><div class="cmp-v">${fmtDur(cmMin)}</div><div class="cmp-l">${MES_ABR[today.getMonth()]}</div></div>
-      </div>
+      ${monthCmpLineSVG(prevMin,cmMin,MES_ABR[pmM],MES_ABR[today.getMonth()])}
       ${(prevMin||cmMin)?`<div class="goal-meta" style="justify-content:center"><span>${delta>=0?"▲":"▼"} ${fmtDur(Math.abs(delta))} ${delta>=0?"más":"menos"} que ${MESES[pmM]}</span></div>`:""}`:"";
 
     return `
