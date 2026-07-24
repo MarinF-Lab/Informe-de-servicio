@@ -421,7 +421,7 @@
   }
 
   function defaultState(){
-    return {entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],
+    return {entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],catalogs:{},
             alarmsOn:false,alarmLead:0,stopwatch:{running:false,startEpoch:0,accum:0},
             theme:null,mode:"light",paletteIndex:0,updatedAt:0};
   }
@@ -449,6 +449,7 @@
       goalHours:p.goalHours||0, goalYearHours:p.goalYearHours||0,
       courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[]})),
       appointments:Array.isArray(p.appointments)?p.appointments:[],
+      catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||""}))}])):{},
       alarmsOn:!!p.alarmsOn, alarmLead:p.alarmLead||0,
       stopwatch:p.stopwatch||{running:false,startEpoch:0,accum:0},
       theme:p.theme||null, mode:p.mode==="dark"?"dark":"light", paletteIndex:Number.isInteger(p.paletteIndex)?p.paletteIndex:0, updatedAt:Number(p.updatedAt)||0};
@@ -925,8 +926,9 @@
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><input type="text" id="p-book" maxlength="80" value="${esc(c.book||"")}" placeholder="Ej. Disfruta de la vida para siempre"></div>
+      ${c.book? `<button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>` : ""}
       <div class="row">
-        <div class="field"><label>Lección</label><input type="text" id="p-lesson" maxlength="40" value="${esc(c.lesson||"")}" placeholder="Ej. Lección 12"></div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book,c.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
@@ -940,11 +942,12 @@
     </section>`;
   }
   function logFormHtml(){
+    const c=state.courses.find(x=>x.id===openCourseId);
     const d=logDraft||{date:iso(today),status:"done",lesson:"",point:"",note:"",reason:""};
     const done=d.status!=="missed";
     const fields=done? `
       <div class="row">
-        <div class="field"><label>Lección</label><input type="text" id="lg-lesson" maxlength="40" value="${esc(d.lesson||"")}" placeholder="Ej. Lección 12"></div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",c&&c.book,d.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
@@ -963,6 +966,18 @@
   }
 
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+  function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
+  function lessonPickerHtml(targetId,book,current){
+    const cat=state.catalogs[normKey(book)];
+    const input=`<input type="text" id="${targetId}" maxlength="40" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
+    if(!cat||!cat.items.length) return input;
+    const matched=cat.items.find(it=>it.title===current);
+    return `<div class="daypick" style="flex-wrap:wrap">
+        ${cat.items.map(it=>`<button type="button" class="day-toggle${it===matched?' on':''}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}">${esc(it.title)}</button>`).join("")}
+        <button type="button" class="day-toggle${!matched&&current?' on':''}" data-clesson="${targetId}" data-ctitle="">Escribir a mano</button>
+      </div>
+      <div id="${targetId}-wrap" style="margin-top:8px;${matched||!current?'display:none':''}">${input}</div>`;
+  }
 
   /* ---------- settings ---------- */
   function openSettings(){ document.getElementById("sheet").innerHTML=settingsHtml(); document.getElementById("overlay").classList.add("open"); bindSettings(); }
@@ -1031,8 +1046,83 @@
   }
   async function wipeAll(){
     if(!confirm("Esto borrará TODOS los datos (registros, citas, cursos y metas). ¿Continuar?"))return;
-    state={entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],alarmsOn:false,alarmLead:0,stopwatch:{running:false,startEpoch:0,accum:0},theme:state.theme||null,mode:state.mode||"light",paletteIndex:state.paletteIndex||0};
+    state={entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],catalogs:{},alarmsOn:false,alarmLead:0,stopwatch:{running:false,startEpoch:0,accum:0},theme:state.theme||null,mode:state.mode||"light",paletteIndex:state.paletteIndex||0};
     timeForm=apptForm=courseForm=undefined; timeDraft=null; openCourseId=null; logForm=undefined; logDraft=null; await save(); closeSettings(); render();
+  }
+
+  /* ---------- catálogo de lecciones ---------- */
+  let catalogKey=null;
+  function openCatalog(bookKey,title){
+    catalogKey=bookKey;
+    if(!state.catalogs[bookKey]) state.catalogs[bookKey]={title,items:[]};
+    document.getElementById("sheet").innerHTML=catalogHtml(bookKey);
+    document.getElementById("overlay").classList.add("open");
+    bindCatalog();
+  }
+  function closeCatalog(){ document.getElementById("overlay").classList.remove("open"); catalogKey=null; render(); }
+  function catalogHtml(bookKey){
+    const cat=state.catalogs[bookKey]||{title:bookKey,items:[]};
+    const rows=cat.items.length? cat.items.map((it,i)=>`
+      <div class="item"><span class="tag" style="background:var(--gold)"></span>
+        <div class="body"><div class="ttl" style="font-size:13px">${esc(String(it.n||i+1))}. ${esc(it.title)}</div></div>
+        <div class="ctrls">
+          <button class="icon-btn" data-catup="${it.id}" ${i===0?'disabled':''}>↑</button>
+          <button class="icon-btn" data-catdown="${it.id}" ${i===cat.items.length-1?'disabled':''}>↓</button>
+          <button class="icon-btn" data-catedit="${it.id}">✎</button>
+          <button class="icon-btn del" data-catdel="${it.id}">🗑</button>
+        </div></div>`).join("") : `<div class="none">Aún no hay lecciones. Agrégalas desde tu copia del libro.</div>`;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-family:'Fraunces',serif;font-size:19px;font-weight:500">Lecciones · ${esc(cat.title)}</div>
+        <button class="icon-btn" id="closeCat" style="font-size:20px">✕</button>
+      </div>
+      ${rows}
+      <div class="mini-form">
+        <div class="row">
+          <div class="field" style="max-width:70px"><label>N.º</label><input type="number" id="cat-n" min="1"></div>
+          <div class="field"><label>Título de la lección</label><input type="text" id="cat-title" maxlength="80" placeholder="Ej. Lección 1"></div>
+        </div>
+        <div class="actions"><button class="btn btn-primary" id="addCatItem">+ Agregar</button></div>
+      </div>
+    `;
+  }
+  function bindCatalog(){
+    document.getElementById("closeCat").onclick=closeCatalog;
+    document.getElementById("overlay").onclick=e=>{ if(e.target.id==="overlay") closeCatalog(); };
+    document.getElementById("addCatItem").onclick=onAddCatalogItem;
+    document.querySelectorAll("[data-catedit]").forEach(b=>b.onclick=()=>onEditCatalogItem(b.dataset.catedit));
+    document.querySelectorAll("[data-catdel]").forEach(b=>b.onclick=()=>onDelCatalogItem(b.dataset.catdel));
+    document.querySelectorAll("[data-catup]").forEach(b=>b.onclick=()=>onMoveCatalogItem(b.dataset.catup,-1));
+    document.querySelectorAll("[data-catdown]").forEach(b=>b.onclick=()=>onMoveCatalogItem(b.dataset.catdown,1));
+  }
+  function refreshCatalogSheet(){ document.getElementById("sheet").innerHTML=catalogHtml(catalogKey); bindCatalog(); }
+  async function onAddCatalogItem(){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const n=parseInt(document.getElementById("cat-n").value,10)||cat.items.length+1;
+    const title=document.getElementById("cat-title").value.trim();
+    if(!title){alert("Escribe el título de la lección.");return;}
+    cat.items.push({id:uid(),n,title});
+    await save(); refreshCatalogSheet();
+  }
+  async function onEditCatalogItem(id){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const it=cat.items.find(x=>x.id===id); if(!it)return;
+    const title=prompt("Título de la lección:",it.title); if(title===null)return;
+    it.title=title.trim()||it.title;
+    await save(); refreshCatalogSheet();
+  }
+  async function onDelCatalogItem(id){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    if(!confirm("¿Eliminar esta lección del catálogo?"))return;
+    cat.items=cat.items.filter(x=>x.id!==id);
+    await save(); refreshCatalogSheet();
+  }
+  async function onMoveCatalogItem(id,dir){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const i=cat.items.findIndex(x=>x.id===id); const j=i+dir;
+    if(i<0||j<0||j>=cat.items.length)return;
+    [cat.items[i],cat.items[j]]=[cat.items[j],cat.items[i]];
+    await save(); refreshCatalogSheet();
   }
 
   /* ---------- time draft capture ---------- */
@@ -1151,6 +1241,15 @@
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
+    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book),c.book);};
+    document.querySelectorAll("[data-clesson]").forEach(b=>b.onclick=()=>{
+      const id=b.dataset.clesson, title=b.dataset.ctitle;
+      document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");
+      const inp=document.getElementById(id), wrap=document.getElementById(id+"-wrap");
+      if(title===""){ if(wrap)wrap.style.display=""; if(inp)inp.focus(); }
+      else { if(wrap)wrap.style.display="none"; if(inp){ inp.value=title; inp.dispatchEvent(new Event("change")); } }
+    });
   }
   function captureProfile(){
     const c=state.courses.find(x=>x.id===openCourseId); if(!c)return;
