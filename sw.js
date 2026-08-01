@@ -1,5 +1,5 @@
 /* Service worker · Informe de Servicio */
-const CACHE = "registro-predicacion-v1";
+const CACHE = "registro-predicacion-v2";
 
 /* App shell: lo que se cachea para que la app abra sin conexión.
    (Los logos van aquí; si renombras el HTML, mantén "./" como inicio.) */
@@ -13,6 +13,11 @@ const SHELL = [
   "icon-512.png",
   "icon-512-maskable.png"
 ];
+
+/* Hosts externos que hace falta cachear para que la app (incluyendo el
+   SDK de Firebase y las fuentes) cargue sin conexión. Todo lo demás
+   (Firestore, Auth) se deja pasar sin tocar, para no servir datos viejos. */
+const RUNTIME_HOSTS = ["www.gstatic.com", "fonts.googleapis.com", "fonts.gstatic.com"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -35,8 +40,6 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
-  // Deja pasar TODO lo que no sea de este sitio (Firebase, Google, fuentes) sin tocar la caché.
-  if (url.origin !== self.location.origin) return;
 
   // Navegaciones (abrir la app): primero red, y si no hay, lo cacheado.
   if (req.mode === "navigate") {
@@ -48,7 +51,13 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Recursos propios (iconos, etc.): primero caché, luego red.
+  const sameOrigin = url.origin === self.location.origin;
+  const isRuntimeHost = RUNTIME_HOSTS.includes(url.hostname);
+
+  // Deja pasar sin tocar todo lo demás (Firestore, Auth, etc.): datos en vivo, nunca desde caché.
+  if (!sameOrigin && !isRuntimeHost) return;
+
+  // Recursos propios y del SDK/fuentes: primero caché, luego red (y se actualiza la caché de paso).
   e.respondWith(
     caches.match(req).then((hit) =>
       hit || fetch(req).then((r) => {
@@ -57,6 +66,4 @@ self.addEventListener("fetch", (e) => {
       }).catch(() => hit)
     )
   );
-});
-
 });

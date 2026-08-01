@@ -33,6 +33,7 @@
   .masthead .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:600}
   .masthead h1{font-family:'Fraunces',serif;font-weight:500;font-size:20px;letter-spacing:-.01em;line-height:1.1}
   .reset-btn{background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;cursor:pointer;padding:7px 12px;border-radius:999px;font-family:inherit}
+  .conn-badge{font-size:12px;text-align:center;padding:7px 10px;border-radius:10px;margin:0 0 12px;background:var(--base);color:var(--muted)}
   .reset-btn:hover{color:var(--ink);border-color:var(--pine-soft)}
 
   .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
@@ -282,6 +283,7 @@
     <div><div class="eyebrow">Servicio del campo</div><h1 id="title">Registro de predicación</h1></div>
     <button class="reset-btn" id="settingsBtn">⚙ Ajustes</button>
   </div>
+  <div id="connBadge" class="conn-badge" style="display:none"></div>
   <div id="app"><div class="loading">Cargando tu registro…</div></div>
 </div>
 
@@ -340,8 +342,8 @@
     return null;
   }
   async function cloudSave(uid, st){
-    try{ await setDoc(doc(db,"users",uid), { data: clean(st), updatedAt: Date.now() }, { merge:true }); }
-    catch(e){ console.warn("No se pudo guardar en la nube:", e && e.code || e); }
+    try{ await setDoc(doc(db,"users",uid), { data: clean(st), updatedAt: Date.now() }, { merge:true }); return true; }
+    catch(e){ console.warn("No se pudo guardar en la nube:", e && e.code || e); return false; }
   }
 
   function fbError(code){
@@ -421,7 +423,7 @@
   }
 
   function defaultState(){
-    return {entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],
+    return {entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],catalogs:{},
             alarmsOn:false,alarmLead:0,stopwatch:{running:false,startEpoch:0,accum:0},
             theme:null,mode:"light",paletteIndex:0,updatedAt:0};
   }
@@ -431,7 +433,7 @@
   let viewY=today.getFullYear(), viewM=today.getMonth();
   let resY=svcStartOf(today.getFullYear(),today.getMonth());  // resY = año de servicio (empieza en septiembre)
   let selDate=iso(today);
-  let timeForm=undefined, apptForm=undefined, courseForm=undefined, timeDraft=null, openCourseId=null, logForm=undefined, logDraft=null;
+  let timeForm=undefined, apptForm=undefined, courseForm=undefined, timeDraft=null, openCourseId=null, logForm=undefined, logDraft=null, bulkForm=undefined;
   const hasStore=typeof window.storage!=="undefined"&&window.storage;
   const fired=new Set();
   let audioCtx=null;
@@ -449,6 +451,7 @@
       goalHours:p.goalHours||0, goalYearHours:p.goalYearHours||0,
       courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[]})),
       appointments:Array.isArray(p.appointments)?p.appointments:[],
+      catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||""}))}])):{},
       alarmsOn:!!p.alarmsOn, alarmLead:p.alarmLead||0,
       stopwatch:p.stopwatch||{running:false,startEpoch:0,accum:0},
       theme:p.theme||null, mode:p.mode==="dark"?"dark":"light", paletteIndex:Number.isInteger(p.paletteIndex)?p.paletteIndex:0, updatedAt:Number(p.updatedAt)||0};
@@ -476,27 +479,46 @@
     const lT=(localState&&localState.updatedAt)||0;
     const cT=(cloudState&&cloudState.updatedAt)||0;
     if(cloudState && cT>=lT){ state=normalize(cloudState); await writeLocal(); }
-    else if(localState){ state=normalize(localState); if(CURRENT_UID && lT>cT) cloudSave(CURRENT_UID,state); }
+    else if(localState){ state=normalize(localState); if(CURRENT_UID && lT>cT){ cloudPending=true; cloudSave(CURRENT_UID,state).then(ok=>{cloudPending=!ok;updateConnBadge();}); } }
     else if(cloudState){ state=normalize(cloudState); await writeLocal(); }
     else { state=defaultState(); }
   }
-  let cloudTimer=null;
+  let cloudTimer=null, cloudPending=false;
   async function save(){
     state.updatedAt=Date.now();
     await writeLocal();
     if(CURRENT_UID){
+      cloudPending=true; updateConnBadge();
       clearTimeout(cloudTimer);
       const uid=CURRENT_UID, snapshot=state;
-      cloudTimer=setTimeout(()=>cloudSave(uid,snapshot),1200);   // respaldo en la nube, sin saturar
+      cloudTimer=setTimeout(async()=>{                        // respaldo en la nube, sin saturar
+        const ok=await cloudSave(uid,snapshot);
+        cloudPending=!ok; updateConnBadge();
+      },1200);
     }
   }
+  function trySyncNow(){
+    if(!CURRENT_UID || !cloudPending) return;
+    clearTimeout(cloudTimer);
+    cloudSave(CURRENT_UID,state).then(ok=>{cloudPending=!ok;updateConnBadge();});
+  }
+  function updateConnBadge(){
+    const el=document.getElementById("connBadge"); if(!el)return;
+    if(!navigator.onLine){ el.style.display="block"; el.textContent="📡 Sin conexión — los cambios se guardan en este dispositivo"; }
+    else if(cloudPending){ el.style.display="block"; el.textContent="↻ Sincronizando cambios pendientes…"; }
+    else el.style.display="none";
+  }
+  window.addEventListener("online", ()=>{ updateConnBadge(); trySyncNow(); });
+  window.addEventListener("offline", updateConnBadge);
   const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
-  const entriesOn=s=>state.entries.filter(e=>e.date===s).sort((a,b)=>(a.hours*60+a.minutes)-(b.hours*60+b.minutes));
+  const entriesOn=s=>state.entries.filter(e=>e.date===s&&!e.bulk).sort((a,b)=>(a.hours*60+a.minutes)-(b.hours*60+b.minutes));
   const apptsOn=s=>state.appointments.filter(a=>a.date===s).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
   const coursesOn=s=>{const w=monIdx(parseISO(s));return state.courses.filter(c=>c.active!==false&&Array.isArray(c.weekdays)&&c.weekdays.includes(w));};
   function monthEntries(y,m){return state.entries.filter(e=>{const[ey,em]=e.date.split("-").map(Number);return ey===y&&em-1===m;});}
   function monthMin(y,m){return monthEntries(y,m).reduce((s,e)=>s+e.hours*60+e.minutes,0);}
+  function monthBulkEntry(y,m){return state.entries.find(e=>e.bulk&&e.date===`${y}-${pad(m+1)}-01`);}
+  function isPastMonth(y,m){const now=new Date();return (y<now.getFullYear())||(y===now.getFullYear()&&m<now.getMonth());}
   const visitCount=e=>(e.visits&&e.visits.length)||0;
 
   // Año de servicio (teocrático): empieza en septiembre y termina en agosto del año siguiente.
@@ -661,6 +683,7 @@
     else if(tab==="resumen") app.innerHTML=viewResumen();
     else app.innerHTML=(openCourseId?viewCourseProfile():viewCursos());
     bind();
+    updateConnBadge();
   }
 
   function viewCalendar(){
@@ -671,13 +694,13 @@
     for(let d=1;d<=days;d++){
       const s=`${viewY}-${pad(viewM+1)}-${pad(d)}`;
       const isToday=s===iso(today), isSel=s===selDate;
-      const hasH=state.entries.some(e=>e.date===s);
+      const hasH=state.entries.some(e=>e.date===s&&!e.bulk);
       const dots=hasH?`<span class="dots"><span class="dot-h"></span></span>`:"";
       cells+=`<button class="cell${hasH?' has':''}${isToday?' today':''}${isSel?' sel':''}" data-day="${s}">${d}${dots}</button>`;
     }
     const filled=offset+days, padTo=Math.ceil(filled/7)*7;
     for(let i=filled;i<padTo;i++) cells+=`<button class="cell empty"></button>`;
-    const outDays=[...new Set(monthEntries(viewY,viewM).map(e=>e.date))].sort();
+    const outDays=[...new Set(monthEntries(viewY,viewM).filter(e=>!e.bulk).map(e=>e.date))].sort();
     const outHtml=outDays.length? outDays.map(ds=>{
       const dd=entriesOn(ds), tot=dd.reduce((s,e)=>s+e.hours*60+e.minutes,0);
       const st=dd.reduce((s,e)=>s+(e.studies||0),0);
@@ -697,6 +720,7 @@
       <div class="cal-wrap">${DIAS_ABR.map(d=>`<span class="cal-hd">${d}</span>`).join("")}${cells}</div>
       <div class="month-total"><span>Total del mes</span><b>${fmtDur(monthMin(viewY,viewM))}</b></div>
     </section>
+    ${monthBulkHtml(viewY,viewM)}
     ${paceCardHtml(paceInfo(viewY,viewM))}
     ${dayPanel()}
     <section class="card olist">
@@ -747,6 +771,34 @@
     </div>`;
   }
 
+  function monthBulkHtml(y,m){
+    if(!isPastMonth(y,m)) return "";
+    const b=monthBulkEntry(y,m);
+    const summary=b? `<div class="item"><span class="tag" style="background:var(--pine)"></span>
+        <div class="body"><div class="ttl">${fmtDur(b.hours*60+b.minutes)} en bloque</div>${b.studies?`<div class="sub">${b.studies} estudio${b.studies>1?"s":""}</div>`:""}${b.note?`<div class="sub">${esc(b.note)}</div>`:""}</div>
+        <div class="ctrls"><button class="icon-btn" id="editBulk">✎</button><button class="icon-btn del" id="delBulk">🗑</button></div></div>`
+      : `<div class="none">¿No recuerdas los días exactos? Registra el total del mes.</div>`;
+    const addRow=(!b && bulkForm===undefined)? `<div class="addrow"><button class="add-btn" id="addBulk">+ Registrar total del mes</button></div>` : "";
+    return `
+    <section class="card">
+      <div class="group-title" style="padding:0;margin:0 0 6px">Total en bloque (sin días exactos)</div>
+      ${bulkForm!==undefined? "" : summary}
+      ${bulkForm!==undefined? bulkFormHtml(b) : addRow}
+    </section>`;
+  }
+  function bulkFormHtml(b){
+    const editing=bulkForm&&bulkForm.edit;
+    return `<div class="mini-form">
+      <div class="row">
+        <div class="field"><label>Horas</label><input type="number" id="bk-h" min="0" inputmode="numeric" value="${b?b.hours:""}" placeholder="0"></div>
+        <div class="field"><label>Minutos</label><input type="number" id="bk-m" min="0" max="59" inputmode="numeric" value="${b?b.minutes:""}" placeholder="0"></div>
+        <div class="field"><label>Estudios</label><input type="number" id="bk-s" min="0" inputmode="numeric" value="${b?b.studies||"":""}" placeholder="0"></div>
+      </div>
+      <div class="field"><label>Nota (opcional)</label><input type="text" id="bk-note" maxlength="80" value="${b?esc(b.note||""):""}" placeholder="Ej. No recuerdo los días exactos"></div>
+      <div class="actions"><button class="btn btn-primary" id="saveBulk">${editing?"Actualizar":"Guardar"}</button><button class="btn btn-ghost" id="cancelBulk">Cancelar</button></div>
+    </div>`;
+  }
+
   function apptFormHtml(){
     const a=apptForm.edit? state.appointments.find(x=>x.id===apptForm.edit):null;
     const ty=a?a.type:"estudio", date=a?a.date:iso(today);
@@ -770,7 +822,7 @@
     const yearEnts = state.entries.filter(inSvc);
     const yStudies = yearEnts.reduce((s,e)=>s+(e.studies||0),0);
     const yVisits = yearEnts.reduce((s,e)=>s+visitCount(e),0);
-    const yDays = new Set(yearEnts.map(e=>e.date)).size;
+    const yDays = new Set(yearEnts.filter(e=>!e.bulk).map(e=>e.date)).size;
     const bigH=Math.floor(yearMin/60), bigM=yearMin%60, maxM=Math.max(1,...monthsMin);
 
     const gym=state.goalYearHours*60, ypct=gym?Math.min(100,Math.round(yearMin/gym*100)):0;
@@ -925,8 +977,9 @@
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><input type="text" id="p-book" maxlength="80" value="${esc(c.book||"")}" placeholder="Ej. Disfruta de la vida para siempre"></div>
+      ${c.book? `<button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>` : ""}
       <div class="row">
-        <div class="field"><label>Lección</label><input type="text" id="p-lesson" maxlength="40" value="${esc(c.lesson||"")}" placeholder="Ej. Lección 12"></div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book,c.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
@@ -940,11 +993,12 @@
     </section>`;
   }
   function logFormHtml(){
+    const c=state.courses.find(x=>x.id===openCourseId);
     const d=logDraft||{date:iso(today),status:"done",lesson:"",point:"",note:"",reason:""};
     const done=d.status!=="missed";
     const fields=done? `
       <div class="row">
-        <div class="field"><label>Lección</label><input type="text" id="lg-lesson" maxlength="40" value="${esc(d.lesson||"")}" placeholder="Ej. Lección 12"></div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",c&&c.book,d.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
@@ -963,6 +1017,18 @@
   }
 
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+  function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
+  function lessonPickerHtml(targetId,book,current){
+    const cat=state.catalogs[normKey(book)];
+    const input=`<input type="text" id="${targetId}" maxlength="40" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
+    if(!cat||!cat.items.length) return input;
+    const matched=cat.items.find(it=>it.title===current);
+    return `<div class="daypick" style="flex-wrap:wrap">
+        ${cat.items.map(it=>`<button type="button" class="day-toggle${it===matched?' on':''}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}">${esc(it.title)}</button>`).join("")}
+        <button type="button" class="day-toggle${!matched&&current?' on':''}" data-clesson="${targetId}" data-ctitle="">Escribir a mano</button>
+      </div>
+      <div id="${targetId}-wrap" style="margin-top:8px;${matched||!current?'display:none':''}">${input}</div>`;
+  }
 
   /* ---------- settings ---------- */
   function openSettings(){ document.getElementById("sheet").innerHTML=settingsHtml(); document.getElementById("overlay").classList.add("open"); bindSettings(); }
@@ -1031,8 +1097,83 @@
   }
   async function wipeAll(){
     if(!confirm("Esto borrará TODOS los datos (registros, citas, cursos y metas). ¿Continuar?"))return;
-    state={entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],alarmsOn:false,alarmLead:0,stopwatch:{running:false,startEpoch:0,accum:0},theme:state.theme||null,mode:state.mode||"light",paletteIndex:state.paletteIndex||0};
+    state={entries:[],goalHours:0,goalYearHours:0,courses:[],appointments:[],catalogs:{},alarmsOn:false,alarmLead:0,stopwatch:{running:false,startEpoch:0,accum:0},theme:state.theme||null,mode:state.mode||"light",paletteIndex:state.paletteIndex||0};
     timeForm=apptForm=courseForm=undefined; timeDraft=null; openCourseId=null; logForm=undefined; logDraft=null; await save(); closeSettings(); render();
+  }
+
+  /* ---------- catálogo de lecciones ---------- */
+  let catalogKey=null;
+  function openCatalog(bookKey,title){
+    catalogKey=bookKey;
+    if(!state.catalogs[bookKey]) state.catalogs[bookKey]={title,items:[]};
+    document.getElementById("sheet").innerHTML=catalogHtml(bookKey);
+    document.getElementById("overlay").classList.add("open");
+    bindCatalog();
+  }
+  function closeCatalog(){ document.getElementById("overlay").classList.remove("open"); catalogKey=null; render(); }
+  function catalogHtml(bookKey){
+    const cat=state.catalogs[bookKey]||{title:bookKey,items:[]};
+    const rows=cat.items.length? cat.items.map((it,i)=>`
+      <div class="item"><span class="tag" style="background:var(--gold)"></span>
+        <div class="body"><div class="ttl" style="font-size:13px">${esc(String(it.n||i+1))}. ${esc(it.title)}</div></div>
+        <div class="ctrls">
+          <button class="icon-btn" data-catup="${it.id}" ${i===0?'disabled':''}>↑</button>
+          <button class="icon-btn" data-catdown="${it.id}" ${i===cat.items.length-1?'disabled':''}>↓</button>
+          <button class="icon-btn" data-catedit="${it.id}">✎</button>
+          <button class="icon-btn del" data-catdel="${it.id}">🗑</button>
+        </div></div>`).join("") : `<div class="none">Aún no hay lecciones. Agrégalas desde tu copia del libro.</div>`;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-family:'Fraunces',serif;font-size:19px;font-weight:500">Lecciones · ${esc(cat.title)}</div>
+        <button class="icon-btn" id="closeCat" style="font-size:20px">✕</button>
+      </div>
+      ${rows}
+      <div class="mini-form">
+        <div class="row">
+          <div class="field" style="max-width:70px"><label>N.º</label><input type="number" id="cat-n" min="1"></div>
+          <div class="field"><label>Título de la lección</label><input type="text" id="cat-title" maxlength="80" placeholder="Ej. Lección 1"></div>
+        </div>
+        <div class="actions"><button class="btn btn-primary" id="addCatItem">+ Agregar</button></div>
+      </div>
+    `;
+  }
+  function bindCatalog(){
+    document.getElementById("closeCat").onclick=closeCatalog;
+    document.getElementById("overlay").onclick=e=>{ if(e.target.id==="overlay") closeCatalog(); };
+    document.getElementById("addCatItem").onclick=onAddCatalogItem;
+    document.querySelectorAll("[data-catedit]").forEach(b=>b.onclick=()=>onEditCatalogItem(b.dataset.catedit));
+    document.querySelectorAll("[data-catdel]").forEach(b=>b.onclick=()=>onDelCatalogItem(b.dataset.catdel));
+    document.querySelectorAll("[data-catup]").forEach(b=>b.onclick=()=>onMoveCatalogItem(b.dataset.catup,-1));
+    document.querySelectorAll("[data-catdown]").forEach(b=>b.onclick=()=>onMoveCatalogItem(b.dataset.catdown,1));
+  }
+  function refreshCatalogSheet(){ document.getElementById("sheet").innerHTML=catalogHtml(catalogKey); bindCatalog(); }
+  async function onAddCatalogItem(){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const n=parseInt(document.getElementById("cat-n").value,10)||cat.items.length+1;
+    const title=document.getElementById("cat-title").value.trim();
+    if(!title){alert("Escribe el título de la lección.");return;}
+    cat.items.push({id:uid(),n,title});
+    await save(); refreshCatalogSheet();
+  }
+  async function onEditCatalogItem(id){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const it=cat.items.find(x=>x.id===id); if(!it)return;
+    const title=prompt("Título de la lección:",it.title); if(title===null)return;
+    it.title=title.trim()||it.title;
+    await save(); refreshCatalogSheet();
+  }
+  async function onDelCatalogItem(id){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    if(!confirm("¿Eliminar esta lección del catálogo?"))return;
+    cat.items=cat.items.filter(x=>x.id!==id);
+    await save(); refreshCatalogSheet();
+  }
+  async function onMoveCatalogItem(id,dir){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const i=cat.items.findIndex(x=>x.id===id); const j=i+dir;
+    if(i<0||j<0||j>=cat.items.length)return;
+    [cat.items[i],cat.items[j]]=[cat.items[j],cat.items[i]];
+    await save(); refreshCatalogSheet();
   }
 
   /* ---------- time draft capture ---------- */
@@ -1047,8 +1188,8 @@
   function bind(){
     if(tab==="cal"){
       const pm=document.getElementById("pm"),nm=document.getElementById("nm");
-      if(pm)pm.onclick=()=>{viewM--;if(viewM<0){viewM=11;viewY--;}syncSel();render();};
-      if(nm)nm.onclick=()=>{viewM++;if(viewM>11){viewM=0;viewY++;}syncSel();render();};
+      if(pm)pm.onclick=()=>{viewM--;if(viewM<0){viewM=11;viewY--;}syncSel();bulkForm=undefined;render();};
+      if(nm)nm.onclick=()=>{viewM++;if(viewM>11){viewM=0;viewY++;}syncSel();bulkForm=undefined;render();};
       document.querySelectorAll(".cell[data-day]").forEach(b=>b.onclick=()=>{selDate=b.dataset.day;timeForm=undefined;timeDraft=null;render();});
       document.querySelectorAll("[data-oday]").forEach(b=>b.onclick=()=>{selDate=b.dataset.oday;timeForm=undefined;timeDraft=null;render();const el=document.querySelector(".day-head");if(el)el.scrollIntoView({behavior:"smooth"});});
       const b1=document.getElementById("sw-start"); if(b1)b1.onclick=swStart;
@@ -1063,6 +1204,11 @@
       const ct=document.getElementById("cancelTime"); if(ct)ct.onclick=()=>{timeForm=undefined;timeDraft=null;render();};
       document.querySelectorAll("[data-eedit]").forEach(b=>b.onclick=()=>{const e=state.entries.find(x=>x.id===b.dataset.eedit);timeDraft={h:e.hours||"",m:e.minutes||"",studies:e.studies||"",note:e.note||"",visits:(e.visits||[]).map(v=>({name:v.name||"",place:v.place||""}))};timeForm={edit:b.dataset.eedit};render();});
       document.querySelectorAll("[data-edel]").forEach(b=>b.onclick=()=>delEntry(b.dataset.edel));
+      const ab=document.getElementById("addBulk"); if(ab)ab.onclick=()=>{bulkForm={edit:null};render();};
+      const eb=document.getElementById("editBulk"); if(eb)eb.onclick=()=>{bulkForm={edit:monthBulkEntry(viewY,viewM).id};render();};
+      const db=document.getElementById("delBulk"); if(db)db.onclick=delBulk;
+      const sb=document.getElementById("saveBulk"); if(sb)sb.onclick=onSaveBulk;
+      const cb=document.getElementById("cancelBulk"); if(cb)cb.onclick=()=>{bulkForm=undefined;render();};
     }
     if(tab==="resumen"){
       document.getElementById("py").onclick=()=>{resY--;render();};
@@ -1108,6 +1254,26 @@
   }
   async function delEntry(id){if(!confirm("¿Eliminar este registro de tiempo?"))return;state.entries=state.entries.filter(e=>e.id!==id);if(timeForm&&timeForm.edit===id){timeForm=undefined;timeDraft=null;}await save();render();}
 
+  async function onSaveBulk(){
+    const y=viewY,m=viewM;
+    const h=parseInt(document.getElementById("bk-h").value||0,10)||0;
+    const mi=parseInt(document.getElementById("bk-m").value||0,10)||0;
+    const s=parseInt(document.getElementById("bk-s").value||0,10)||0;
+    const note=document.getElementById("bk-note").value.trim();
+    if(h===0&&mi===0){alert("Anota al menos algunos minutos.");return;}
+    const data={date:`${y}-${pad(m+1)}-01`,hours:h,minutes:Math.min(mi,59),studies:Math.max(0,s),note,bulk:true};
+    const existing=monthBulkEntry(y,m);
+    if(existing){const i=state.entries.findIndex(e=>e.id===existing.id);state.entries[i]={...existing,...data};}
+    else state.entries.push({id:uid(),...data});
+    bulkForm=undefined; await save(); render();
+  }
+  async function delBulk(){
+    const b=monthBulkEntry(viewY,viewM); if(!b)return;
+    if(!confirm("¿Eliminar el total en bloque de este mes?"))return;
+    state.entries=state.entries.filter(e=>e.id!==b.id);
+    bulkForm=undefined; await save(); render();
+  }
+
   async function onSaveAppt(){
     const date=document.getElementById("a-date").value||iso(today);
     const time=document.getElementById("a-time").value;
@@ -1151,6 +1317,15 @@
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
+    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book),c.book);};
+    document.querySelectorAll("[data-clesson]").forEach(b=>b.onclick=()=>{
+      const id=b.dataset.clesson, title=b.dataset.ctitle;
+      document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");
+      const inp=document.getElementById(id), wrap=document.getElementById(id+"-wrap");
+      if(title===""){ if(wrap)wrap.style.display=""; if(inp)inp.focus(); }
+      else { if(wrap)wrap.style.display="none"; if(inp){ inp.value=title; inp.dispatchEvent(new Event("change")); } }
+    });
   }
   function captureProfile(){
     const c=state.courses.find(x=>x.id===openCourseId); if(!c)return;
