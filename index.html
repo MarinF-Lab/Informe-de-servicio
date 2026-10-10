@@ -194,18 +194,23 @@
   .toggle{font-family:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:7px 14px;background:var(--base);color:var(--muted);cursor:pointer;white-space:nowrap}
   .toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
   .daypick{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
-  .cat-sec{margin-bottom:6px}
-  .cat-sec summary{font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:6px 0}
-  .lrow{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+  .cat-sec{margin-bottom:8px;border:1px solid var(--line);border-radius:12px;background:var(--paper);overflow:hidden}
+  .cat-sec summary{list-style:none;display:flex;align-items:center;gap:10px;font-size:15.5px;font-weight:600;color:var(--ink);cursor:pointer;padding:13px 14px;background:var(--base)}
+  .cat-sec summary::-webkit-details-marker{display:none}
+  .cat-sec summary::after{content:"›";margin-left:auto;font-size:20px;line-height:1;color:var(--muted);transition:transform .2s}
+  .cat-sec[open] summary::after{transform:rotate(90deg)}
+  .cat-sec .scount{font-size:12.5px;font-weight:600;color:var(--pine);background:var(--paper);border-radius:999px;padding:2px 9px}
+  .lrows{max-height:520px;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;padding:0 10px}
+  .lrow{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line)}
   .lrow:last-child{border-bottom:none}
-  .lchk{flex:0 0 24px;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit}
+  .lchk{flex:0 0 28px;width:28px;height:28px;border-radius:50%;border:2px solid var(--line);background:var(--paper);color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit}
   .lrow.done .lchk{background:var(--pine);border-color:var(--pine)}
-  .lsel{flex:1;min-width:0;display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:none;padding:10px 6px;font-family:inherit;font-size:13.5px;line-height:1.35;color:var(--ink);cursor:pointer;border-radius:8px}
-  .lsel .ln{flex:0 0 20px;font-weight:600;color:var(--muted);font-size:12px}
+  .lsel{flex:1;min-width:0;display:flex;gap:10px;align-items:baseline;text-align:left;background:none;border:none;padding:13px 8px;margin:3px 0;font-family:inherit;font-size:15.5px;line-height:1.35;color:var(--ink);cursor:pointer;border-radius:10px}
+  .lsel .ln{flex:0 0 22px;font-weight:600;color:var(--muted);font-size:13px}
   .lrow.done .lt{color:var(--muted)}
   .lsel.on{background:var(--base);font-weight:600}
   .lsel.on .lt{color:var(--ink)}
-  .lsel .lp{display:block;font-size:11.5px;font-weight:500;color:var(--gold);margin-top:2px}
+  .lsel .lp{display:block;font-size:12.5px;font-weight:500;color:var(--gold);margin-top:3px}
   .cat-sec-hd{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
   .day-toggle{flex:1;min-width:40px;font-family:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:9px;padding:8px 0;background:var(--paper);color:var(--muted);cursor:pointer;text-align:center}
   .day-toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
@@ -1017,7 +1022,6 @@
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
       <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,c.point)}</div>
-      <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
       <div class="field" style="margin-bottom:0"><label>Notas</label><textarea id="p-notes" rows="3" placeholder="Intereses, familia, observaciones…">${esc(c.notes||"")}</textarea></div>
     </section>
@@ -1085,15 +1089,13 @@
       return `<div class="lrow${ok?" done":""}">${chk}<button type="button" class="lsel${it===matched?" on":""}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}${it===matched&&!ok&&progress?`<span class="lp">en curso · ${esc(progress)}</span>`:""}</span></button></div>`;
     };
     const body=groupBySection(cat.items).map(g=>{
-      const rows=g.items.map(row).join("");
-      if(!g.s) return `<div>${rows}</div>`;
+      const rows=`<div class="lrows">${g.items.map(row).join("")}</div>`;
+      if(!g.s) return `<div class="cat-sec">${rows}</div>`;
       const n=g.items.filter(it=>doneSet.has(it.title)).length;
       const open=matched&&g.items.includes(matched);
-      return `<details class="cat-sec"${open?" open":""}><summary>${esc(g.s)} · <span class="lcount">${n}</span>/${g.items.length}</summary>${rows}</details>`;
+      return `<details class="cat-sec"${open?" open":""}><summary>${esc(g.s)}<span class="scount"><span class="lcount">${n}</span>/${g.items.length}</span></summary>${rows}</details>`;
     }).join("");
-    return `${body}
-      <button type="button" class="link-btn${!matched&&current?" on":""}" data-clesson="${targetId}" data-ctitle="" style="margin-top:6px">Escribir a mano</button>
-      <div id="${targetId}-wrap" style="margin-top:8px;${matched||!current?"display:none":""}">${input}</div>`;
+    return `${body}<input type="hidden" id="${targetId}" value="${esc(current||"")}">`;
   }
 
   /* ---------- settings ---------- */
@@ -1411,7 +1413,7 @@
     const c=state.courses.find(x=>x.id===openCourseId);
     if(!c){ openCourseId=null; render(); return; }
     const back=document.getElementById("backCursos"); if(back)back.onclick=()=>{captureProfile();openCourseId=null;courseForm=undefined;logForm=undefined;render();};
-    [["p-book","book"],["p-lesson","lesson"],["p-point","point"],["p-pending","pending"],["p-notes","notes"]].forEach(([id,key])=>{
+    [["p-book","book"],["p-lesson","lesson"],["p-pending","pending"],["p-notes","notes"]].forEach(([id,key])=>{
       const el=document.getElementById(id); if(el) el.onchange=async()=>{c[key]=el.value;await save();};
     });
     const ep=document.getElementById("editProfile"); if(ep)ep.onclick=()=>{captureProfile();courseForm={edit:openCourseId};render();};
@@ -1435,14 +1437,20 @@
       const id=b.dataset.clesson, title=b.dataset.ctitle;
       document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
       b.classList.add("on");
-      const inp=document.getElementById(id), wrap=document.getElementById(id+"-wrap");
-      if(title===""){ if(wrap)wrap.style.display=""; if(inp)inp.focus(); }
-      else { if(wrap)wrap.style.display="none"; if(inp){ inp.value=title; inp.dispatchEvent(new Event("change")); } }
+      const inp=document.getElementById(id);
+      if(inp){ inp.value=title; inp.dispatchEvent(new Event("change")); }
     });
+    const fitTen=list=>{
+      const rows=list.querySelectorAll(".lrow");
+      list.style.maxHeight= rows.length>10 && rows[10].offsetTop? rows[10].offsetTop+"px" : "";
+      const cur=list.querySelector(".lsel.on"); if(cur) list.scrollTop=Math.max(0,cur.closest(".lrow").offsetTop-8);
+    };
+    document.querySelectorAll(".lrows").forEach(fitTen);
+    document.querySelectorAll("details.cat-sec").forEach(d=>d.addEventListener("toggle",()=>{ if(d.open) fitTen(d.querySelector(".lrows")); }));
   }
   function captureProfile(){
     const c=state.courses.find(x=>x.id===openCourseId); if(!c)return;
-    [["p-book","book"],["p-lesson","lesson"],["p-point","point"],["p-pending","pending"],["p-notes","notes"]].forEach(([id,key])=>{const el=document.getElementById(id); if(el) c[key]=el.value;});
+    [["p-book","book"],["p-lesson","lesson"],["p-pending","pending"],["p-notes","notes"]].forEach(([id,key])=>{const el=document.getElementById(id); if(el) c[key]=el.value;});
   }
   function captureLogDraft(){
     if(!logDraft)return;
