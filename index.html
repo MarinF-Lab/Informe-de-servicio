@@ -1016,7 +1016,6 @@
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
-      <button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>
       <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,true)}</div>
       <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
@@ -1405,7 +1404,6 @@
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
-    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book||BOOK),c.book||BOOK);};
     document.querySelectorAll("[data-ldone]").forEach(b=>b.onclick=async()=>{
       const t=b.dataset.ldone; c.done=Array.isArray(c.done)?c.done:[];
       const on=!c.done.includes(t);
