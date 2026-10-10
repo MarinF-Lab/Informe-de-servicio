@@ -495,7 +495,7 @@
     if(CURRENT_UID) await syncSharedCatalogs();
   }
   async function syncSharedCatalogs(){
-    const keys=[...new Set(state.courses.map(c=>normKey(c.book)).filter(Boolean))];
+    const keys=[...new Set(state.courses.map(c=>normKey(c.book||BOOK)))];
     let changed=false;
     for(const k of keys){
       const shared=await loadSharedCatalog(k);
@@ -1002,10 +1002,10 @@
 
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
-      <div class="field"><label>Libro o publicación que se estudia</label><input type="text" id="p-book" maxlength="80" value="${esc(c.book||"")}" placeholder="Ej. Disfruta de la vida para siempre"></div>
-      ${c.book? `<button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>` : ""}
+      <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
+      <button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>
       <div class="row">
-        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book,c.lesson)}</div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
@@ -1024,7 +1024,7 @@
     const done=d.status!=="missed";
     const fields=done? `
       <div class="row">
-        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",c&&c.book,d.lesson)}</div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
@@ -1043,6 +1043,7 @@
   }
 
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+  const BOOK="Disfruta de la vida para siempre";
   function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
   function lessonPickerHtml(targetId,book,current){
     const cat=state.catalogs[normKey(book)];
@@ -1380,7 +1381,7 @@
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
-    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book),c.book);};
+    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book||BOOK),c.book||BOOK);};
     document.querySelectorAll("[data-clesson]").forEach(b=>b.onclick=()=>{
       const id=b.dataset.clesson, title=b.dataset.ctitle;
       document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
