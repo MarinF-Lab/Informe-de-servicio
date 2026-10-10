@@ -206,6 +206,7 @@
   .lrow.done .lt{color:var(--muted)}
   .lsel.on{background:var(--base);font-weight:600}
   .lsel.on .lt{color:var(--ink)}
+  .lsel .lp{display:block;font-size:11.5px;font-weight:500;color:var(--gold);margin-top:2px}
   .cat-sec-hd{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
   .day-toggle{flex:1;min-width:40px;font-family:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:9px;padding:8px 0;background:var(--paper);color:var(--muted);cursor:pointer;text-align:center}
   .day-toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
@@ -991,7 +992,7 @@
       const missed=e.status==="missed";
       const parts=[];
       if(missed){ parts.push("No se realizó"); if(e.reason)parts.push(e.reason); }
-      else { const hh=[]; if(e.lesson)hh.push(e.lesson); if(e.point)hh.push(e.point); if(hh.length)parts.push(hh.join(" · ")); if(e.note)parts.push(e.note); }
+      else { const hh=[]; if(e.lesson)hh.push(e.finished===false?`${e.lesson} (sin terminar)`:e.lesson); if(e.point)hh.push(e.point); if(hh.length)parts.push(hh.join(" · ")); if(e.note)parts.push(e.note); }
       return `<div class="item"><span class="tag" style="background:${missed?'var(--danger)':'var(--gold)'}"></span>
         <div class="body"><div class="ttl" style="font-size:13px">${dateStr}</div><div class="sub">${esc(parts.join(" · "))||"—"}</div></div>
         <div class="ctrls"><button class="icon-btn del" data-lgdel="${e.id}">🗑</button></div></div>`;}).join("") : `<div class="none">Aún no hay clases registradas.</div>`;
@@ -1016,7 +1017,7 @@
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
-      <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,true)}</div>
+      <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,true,c.point)}</div>
       <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
       <div class="field" style="margin-bottom:0"><label>Notas</label><textarea id="p-notes" rows="3" placeholder="Intereses, familia, observaciones…">${esc(c.notes||"")}</textarea></div>
@@ -1031,10 +1032,16 @@
   function logFormHtml(){
     const c=state.courses.find(x=>x.id===openCourseId);
     const d=logDraft||{date:iso(today),status:"done",lesson:"",point:"",note:"",reason:""};
-    const done=d.status!=="missed";
+    const done=d.status!=="missed", fin=d.finished!==false;
     const fields=done? `
-      <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson,c&&c.done,false)}</div>
-      <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
+      <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson,c&&c.done,false,c&&c.point)}</div>
+      <div class="field"><label>¿Terminaron la lección?</label>
+        <div class="daypick">
+          <button type="button" class="day-toggle${fin?' on':''}" data-lgfin="1" style="flex:1">Sí, se terminó</button>
+          <button type="button" class="day-toggle${!fin?' on':''}" data-lgfin="0" style="flex:1">No, quedó a medias</button>
+        </div>
+      </div>
+      <div class="field"><label>${fin?"Punto / párrafo":"¿Hasta qué punto llegaron?"}</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
     : `<div class="field" style="margin-bottom:0"><label>Motivo por el que no se realizó</label><textarea id="lg-reason" rows="3" placeholder="Ej. El estudiante no pudo; lluvia; viaje…">${esc(d.reason||"")}</textarea></div>`;
     return `<div class="mini-form">
@@ -1053,7 +1060,7 @@
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
   const BOOK="Disfruta de la vida para siempre";
   function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
-  function lessonPickerHtml(targetId,book,current,done,editable){
+  function lessonPickerHtml(targetId,book,current,done,editable,progress){
     const cat=state.catalogs[normKey(book)];
     const input=`<input type="text" id="${targetId}" maxlength="80" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
     if(!cat||!cat.items.length) return input;
@@ -1062,7 +1069,7 @@
     const row=it=>{
       const ok=doneSet.has(it.title);
       const chk=editable? `<button type="button" class="lchk" data-ldone="${esc(it.title)}" aria-label="Marcar como completada">${ok?"✓":""}</button>` : `<span class="lchk">${ok?"✓":""}</span>`;
-      return `<div class="lrow${ok?" done":""}">${chk}<button type="button" class="lsel${it===matched?" on":""}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}</span></button></div>`;
+      return `<div class="lrow${ok?" done":""}">${chk}<button type="button" class="lsel${it===matched?" on":""}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}${it===matched&&!ok&&progress?`<span class="lp">en curso · ${esc(progress)}</span>`:""}</span></button></div>`;
     };
     const groups=[];
     cat.items.forEach(it=>{ const s=it.section||""; let g=groups.find(x=>x.s===s); if(!g){g={s,items:[]};groups.push(g);} g.items.push(it); });
@@ -1399,8 +1406,9 @@
     const ep=document.getElementById("editProfile"); if(ep)ep.onclick=()=>{captureProfile();courseForm={edit:openCourseId};render();};
     const pt=document.getElementById("pToggle"); if(pt)pt.onclick=()=>toggleCourse(openCourseId);
     const pd=document.getElementById("pDel"); if(pd)pd.onclick=async()=>{ if(!confirm("¿Eliminar este curso y su plan?"))return; state.courses=state.courses.filter(x=>x.id!==openCourseId); openCourseId=null;courseForm=undefined;logForm=undefined; await save(); render(); };
-    const al=document.getElementById("addLog"); if(al)al.onclick=()=>{captureProfile();logDraft={date:iso(today),status:"done",lesson:c.lesson||"",point:c.point||"",note:"",reason:""};logForm={edit:null};render();};
+    const al=document.getElementById("addLog"); if(al)al.onclick=()=>{captureProfile();logDraft={date:iso(today),status:"done",finished:true,lesson:c.lesson||"",point:c.point||"",note:"",reason:""};logForm={edit:null};render();};
     document.querySelectorAll("[data-lgstatus]").forEach(b=>b.onclick=()=>{captureLogDraft();logDraft.status=b.dataset.lgstatus;render();});
+    document.querySelectorAll("[data-lgfin]").forEach(b=>b.onclick=()=>{captureLogDraft();logDraft.finished=b.dataset.lgfin==="1";render();});
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
@@ -1446,9 +1454,13 @@
     } else {
       const lesson=(d.lesson||"").trim(), point=(d.point||"").trim(), note=(d.note||"").trim();
       if(!lesson&&!point&&!note){alert("Anota qué se vio en la clase.");return;}
-      c.log.push({id:uid(),date,status:"done",lesson,point,note});
-      if(lesson) c.lesson=lesson; if(point) c.point=point;
-      if(lesson){ c.done=Array.isArray(c.done)?c.done:[]; if(!c.done.includes(lesson)) c.done.push(lesson); }
+      const finished=d.finished!==false;
+      c.log.push({id:uid(),date,status:"done",lesson,point,note,finished});
+      if(lesson) c.lesson=lesson;
+      if(finished){
+        c.point="";
+        if(lesson){ c.done=Array.isArray(c.done)?c.done:[]; if(!c.done.includes(lesson)) c.done.push(lesson); }
+      } else if(point) c.point=point;
     }
     logForm=undefined; logDraft=null; await save(); render();
   }
