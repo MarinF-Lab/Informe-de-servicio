@@ -199,7 +199,6 @@
   .lrow{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
   .lrow:last-child{border-bottom:none}
   .lchk{flex:0 0 24px;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit}
-  span.lchk{cursor:default}
   .lrow.done .lchk{background:var(--pine);border-color:var(--pine)}
   .lsel{flex:1;min-width:0;display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:none;padding:10px 6px;font-family:inherit;font-size:13.5px;line-height:1.35;color:var(--ink);cursor:pointer;border-radius:8px}
   .lsel .ln{flex:0 0 20px;font-weight:600;color:var(--muted);font-size:12px}
@@ -1017,7 +1016,7 @@
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
-      <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,true,c.point)}</div>
+      <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,c.point)}</div>
       <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
       <div class="field" style="margin-bottom:0"><label>Notas</label><textarea id="p-notes" rows="3" placeholder="Intereses, familia, observaciones…">${esc(c.notes||"")}</textarea></div>
@@ -1034,7 +1033,7 @@
     const d=logDraft||{date:iso(today),status:"done",lesson:"",point:"",note:"",reason:""};
     const done=d.status!=="missed", fin=d.finished!==false;
     const fields=done? `
-      <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson,c&&c.done,false,c&&c.point)}</div>
+      <div class="field"><label>Lección</label>${lessonSelectHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson,c&&c.done)}</div>
       <div class="field"><label>¿Terminaron la lección?</label>
         <div class="daypick">
           <button type="button" class="day-toggle${fin?' on':''}" data-lgfin="1" style="flex:1">Sí, se terminó</button>
@@ -1060,7 +1059,21 @@
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
   const BOOK="Disfruta de la vida para siempre";
   function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
-  function lessonPickerHtml(targetId,book,current,done,editable,progress){
+  function groupBySection(items){
+    const groups=[];
+    items.forEach(it=>{ const s=it.section||""; let g=groups.find(x=>x.s===s); if(!g){g={s,items:[]};groups.push(g);} g.items.push(it); });
+    return groups;
+  }
+  function lessonSelectHtml(id,book,current,done){
+    const cat=state.catalogs[normKey(book)];
+    if(!cat||!cat.items.length) return `<input type="text" id="${id}" maxlength="80" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
+    const doneSet=new Set(done||[]);
+    const opt=it=>`<option value="${esc(it.title)}"${it.title===current?" selected":""}>${it.n?pad(it.n)+" · ":""}${esc(it.title)}${doneSet.has(it.title)?" ✓":""}</option>`;
+    const body=groupBySection(cat.items).map(g=>g.s?`<optgroup label="${esc(g.s)}">${g.items.map(opt).join("")}</optgroup>`:g.items.map(opt).join("")).join("");
+    const other=current&&!cat.items.some(it=>it.title===current)? `<option value="${esc(current)}" selected>${esc(current)}</option>` : "";
+    return `<select id="${id}"><option value=""${!current?" selected":""}>Elige una lección…</option>${other}${body}</select>`;
+  }
+  function lessonPickerHtml(targetId,book,current,done,progress){
     const cat=state.catalogs[normKey(book)];
     const input=`<input type="text" id="${targetId}" maxlength="80" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
     if(!cat||!cat.items.length) return input;
@@ -1068,12 +1081,10 @@
     const matched=cat.items.find(it=>it.title===current);
     const row=it=>{
       const ok=doneSet.has(it.title);
-      const chk=editable? `<button type="button" class="lchk" data-ldone="${esc(it.title)}" aria-label="Marcar como completada">${ok?"✓":""}</button>` : `<span class="lchk">${ok?"✓":""}</span>`;
+      const chk=`<button type="button" class="lchk" data-ldone="${esc(it.title)}" aria-label="Marcar como completada">${ok?"✓":""}</button>`;
       return `<div class="lrow${ok?" done":""}">${chk}<button type="button" class="lsel${it===matched?" on":""}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}${it===matched&&!ok&&progress?`<span class="lp">en curso · ${esc(progress)}</span>`:""}</span></button></div>`;
     };
-    const groups=[];
-    cat.items.forEach(it=>{ const s=it.section||""; let g=groups.find(x=>x.s===s); if(!g){g={s,items:[]};groups.push(g);} g.items.push(it); });
-    const body=groups.map(g=>{
+    const body=groupBySection(cat.items).map(g=>{
       const rows=g.items.map(row).join("");
       if(!g.s) return `<div>${rows}</div>`;
       const n=g.items.filter(it=>doneSet.has(it.title)).length;
