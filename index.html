@@ -195,7 +195,17 @@
   .toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
   .daypick{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
   .cat-sec{margin-bottom:6px}
-  .cat-sec summary{font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:4px 0}
+  .cat-sec summary{font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:6px 0}
+  .lrow{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+  .lrow:last-child{border-bottom:none}
+  .lchk{flex:0 0 24px;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit}
+  span.lchk{cursor:default}
+  .lrow.done .lchk{background:var(--pine);border-color:var(--pine)}
+  .lsel{flex:1;min-width:0;display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:none;padding:10px 6px;font-family:inherit;font-size:13.5px;line-height:1.35;color:var(--ink);cursor:pointer;border-radius:8px}
+  .lsel .ln{flex:0 0 20px;font-weight:600;color:var(--muted);font-size:12px}
+  .lrow.done .lt{color:var(--muted)}
+  .lsel.on{background:var(--base);font-weight:600}
+  .lsel.on .lt{color:var(--ink)}
   .cat-sec-hd{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
   .day-toggle{flex:1;min-width:40px;font-family:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:9px;padding:8px 0;background:var(--paper);color:var(--muted);cursor:pointer;text-align:center}
   .day-toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
@@ -462,7 +472,7 @@
   function normalize(p){
     return {entries:Array.isArray(p.entries)?p.entries:[],
       goalHours:p.goalHours||0, goalYearHours:p.goalYearHours||0,
-      courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[]})),
+      courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[],done:Array.isArray(c.done)?c.done:(Array.isArray(c.log)?c.log:[]).filter(e=>e.status!=="missed"&&e.lesson).map(e=>e.lesson)})),
       appointments:Array.isArray(p.appointments)?p.appointments:[],
       catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||"",section:it.section||""})),updatedAt:v.updatedAt||0}])):{},
       alarmsOn:!!p.alarmsOn, alarmLead:p.alarmLead||0,
@@ -1007,10 +1017,8 @@
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
       <button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>
-      <div class="row">
-        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson)}</div>
-        <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
-      </div>
+      <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,true)}</div>
+      <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
       <div class="field" style="margin-bottom:0"><label>Notas</label><textarea id="p-notes" rows="3" placeholder="Intereses, familia, observaciones…">${esc(c.notes||"")}</textarea></div>
     </section>
@@ -1026,10 +1034,8 @@
     const d=logDraft||{date:iso(today),status:"done",lesson:"",point:"",note:"",reason:""};
     const done=d.status!=="missed";
     const fields=done? `
-      <div class="row">
-        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson)}</div>
-        <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
-      </div>
+      <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson,c&&c.done,false)}</div>
+      <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
     : `<div class="field" style="margin-bottom:0"><label>Motivo por el que no se realizó</label><textarea id="lg-reason" rows="3" placeholder="Ej. El estudiante no pudo; lluvia; viaje…">${esc(d.reason||"")}</textarea></div>`;
     return `<div class="mini-form">
@@ -1048,25 +1054,29 @@
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
   const BOOK="Disfruta de la vida para siempre";
   function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
-  function lessonPickerHtml(targetId,book,current){
+  function lessonPickerHtml(targetId,book,current,done,editable){
     const cat=state.catalogs[normKey(book)];
-    const input=`<input type="text" id="${targetId}" maxlength="40" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
+    const input=`<input type="text" id="${targetId}" maxlength="80" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
     if(!cat||!cat.items.length) return input;
+    const doneSet=new Set(done||[]);
     const matched=cat.items.find(it=>it.title===current);
-    const chip=it=>`<button type="button" class="day-toggle${it===matched?' on':''}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}">${esc(it.title)}</button>`;
+    const row=it=>{
+      const ok=doneSet.has(it.title);
+      const chk=editable? `<button type="button" class="lchk" data-ldone="${esc(it.title)}" aria-label="Marcar como completada">${ok?"✓":""}</button>` : `<span class="lchk">${ok?"✓":""}</span>`;
+      return `<div class="lrow${ok?" done":""}">${chk}<button type="button" class="lsel${it===matched?" on":""}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}</span></button></div>`;
+    };
     const groups=[];
     cat.items.forEach(it=>{ const s=it.section||""; let g=groups.find(x=>x.s===s); if(!g){g={s,items:[]};groups.push(g);} g.items.push(it); });
     const body=groups.map(g=>{
-      const chips=`<div class="daypick" style="flex-wrap:wrap">${g.items.map(chip).join("")}</div>`;
-      if(!g.s) return chips;
+      const rows=g.items.map(row).join("");
+      if(!g.s) return `<div>${rows}</div>`;
+      const n=g.items.filter(it=>doneSet.has(it.title)).length;
       const open=matched&&g.items.includes(matched);
-      return `<details class="cat-sec"${open?' open':''}><summary>${esc(g.s)}</summary>${chips}</details>`;
+      return `<details class="cat-sec"${open?" open":""}><summary>${esc(g.s)} · <span class="lcount">${n}</span>/${g.items.length}</summary>${rows}</details>`;
     }).join("");
     return `${body}
-      <div class="daypick" style="flex-wrap:wrap">
-        <button type="button" class="day-toggle${!matched&&current?' on':''}" data-clesson="${targetId}" data-ctitle="">Escribir a mano</button>
-      </div>
-      <div id="${targetId}-wrap" style="margin-top:8px;${matched||!current?'display:none':''}">${input}</div>`;
+      <button type="button" class="link-btn${!matched&&current?" on":""}" data-clesson="${targetId}" data-ctitle="" style="margin-top:6px">Escribir a mano</button>
+      <div id="${targetId}-wrap" style="margin-top:8px;${matched||!current?"display:none":""}">${input}</div>`;
   }
 
   /* ---------- settings ---------- */
@@ -1396,6 +1406,14 @@
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
     const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book||BOOK),c.book||BOOK);};
+    document.querySelectorAll("[data-ldone]").forEach(b=>b.onclick=async()=>{
+      const t=b.dataset.ldone; c.done=Array.isArray(c.done)?c.done:[];
+      const on=!c.done.includes(t);
+      c.done=on? [...c.done,t] : c.done.filter(x=>x!==t);
+      b.closest(".lrow").classList.toggle("done",on); b.textContent=on?"✓":"";
+      const det=b.closest("details"); if(det){ const cnt=det.querySelector(".lcount"); if(cnt) cnt.textContent=det.querySelectorAll(".lrow.done").length; }
+      await save();
+    });
     document.querySelectorAll("[data-clesson]").forEach(b=>b.onclick=()=>{
       const id=b.dataset.clesson, title=b.dataset.ctitle;
       document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
@@ -1432,6 +1450,7 @@
       if(!lesson&&!point&&!note){alert("Anota qué se vio en la clase.");return;}
       c.log.push({id:uid(),date,status:"done",lesson,point,note});
       if(lesson) c.lesson=lesson; if(point) c.point=point;
+      if(lesson){ c.done=Array.isArray(c.done)?c.done:[]; if(!c.done.includes(lesson)) c.done.push(lesson); }
     }
     logForm=undefined; logDraft=null; await save(); render();
   }
