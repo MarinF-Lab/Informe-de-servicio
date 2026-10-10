@@ -194,6 +194,9 @@
   .toggle{font-family:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:7px 14px;background:var(--base);color:var(--muted);cursor:pointer;white-space:nowrap}
   .toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
   .daypick{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+  .cat-sec{margin-bottom:6px}
+  .cat-sec summary{font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:4px 0}
+  .cat-sec-hd{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
   .day-toggle{flex:1;min-width:40px;font-family:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:9px;padding:8px 0;background:var(--paper);color:var(--muted);cursor:pointer;text-align:center}
   .day-toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
 
@@ -346,6 +349,16 @@
     catch(e){ console.warn("No se pudo guardar en la nube:", e && e.code || e); return false; }
   }
 
+  /* ---------- Catálogos de lecciones: compartidos entre todas las cuentas ---------- */
+  async function loadSharedCatalog(bookKey){
+    try{ const snap = await getDoc(doc(db,"catalogs",bookKey)); return snap.exists()? snap.data() : null; }
+    catch(e){ return null; }
+  }
+  async function saveSharedCatalog(bookKey, cat){
+    try{ await setDoc(doc(db,"catalogs",bookKey), clean({title:cat.title||bookKey, items:cat.items||[], updatedAt:cat.updatedAt||Date.now()}), { merge:true }); return true; }
+    catch(e){ console.warn("No se pudo compartir el catálogo:", e && e.code || e); return false; }
+  }
+
   function fbError(code){
     return ({
       "auth/email-already-in-use":"Ese nombre de usuario ya está en uso.",
@@ -451,7 +464,7 @@
       goalHours:p.goalHours||0, goalYearHours:p.goalYearHours||0,
       courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[]})),
       appointments:Array.isArray(p.appointments)?p.appointments:[],
-      catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||""}))}])):{},
+      catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||"",section:it.section||""})),updatedAt:v.updatedAt||0}])):{},
       alarmsOn:!!p.alarmsOn, alarmLead:p.alarmLead||0,
       stopwatch:p.stopwatch||{running:false,startEpoch:0,accum:0},
       theme:p.theme||null, mode:p.mode==="dark"?"dark":"light", paletteIndex:Number.isInteger(p.paletteIndex)?p.paletteIndex:0, updatedAt:Number(p.updatedAt)||0};
@@ -482,6 +495,22 @@
     else if(localState){ state=normalize(localState); if(CURRENT_UID && lT>cT){ cloudPending=true; cloudSave(CURRENT_UID,state).then(ok=>{cloudPending=!ok;updateConnBadge();}); } }
     else if(cloudState){ state=normalize(cloudState); await writeLocal(); }
     else { state=defaultState(); }
+    if(CURRENT_UID) await syncSharedCatalogs();
+  }
+  async function syncSharedCatalogs(){
+    const keys=[...new Set(state.courses.map(c=>normKey(c.book||BOOK)))];
+    let changed=false;
+    for(const k of keys){
+      const shared=await loadSharedCatalog(k);
+      if(shared && Array.isArray(shared.items)){
+        const local=state.catalogs[k];
+        if(!local || (shared.updatedAt||0) > (local.updatedAt||0)){
+          state.catalogs[k]={title:shared.title||k, items:shared.items, updatedAt:shared.updatedAt||0};
+          changed=true;
+        }
+      }
+    }
+    if(changed) await writeLocal();
   }
   let cloudTimer=null, cloudPending=false;
   async function save(){
@@ -976,10 +1005,10 @@
 
     <section class="card pad">
       <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
-      <div class="field"><label>Libro o publicación que se estudia</label><input type="text" id="p-book" maxlength="80" value="${esc(c.book||"")}" placeholder="Ej. Disfruta de la vida para siempre"></div>
-      ${c.book? `<button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>` : ""}
+      <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
+      <button class="link-btn" id="manageCatalog" style="margin:-8px 0 12px">Gestionar lecciones de este libro</button>
       <div class="row">
-        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book,c.lesson)}</div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="p-point" maxlength="40" value="${esc(c.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
@@ -998,7 +1027,7 @@
     const done=d.status!=="missed";
     const fields=done? `
       <div class="row">
-        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",c&&c.book,d.lesson)}</div>
+        <div class="field"><label>Lección</label>${lessonPickerHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson)}</div>
         <div class="field"><label>Punto / párrafo</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
       </div>
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
@@ -1017,14 +1046,24 @@
   }
 
   function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+  const BOOK="Disfruta de la vida para siempre";
   function normKey(book){return (book||"").trim().toLowerCase().replace(/\s+/g," ");}
   function lessonPickerHtml(targetId,book,current){
     const cat=state.catalogs[normKey(book)];
     const input=`<input type="text" id="${targetId}" maxlength="40" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
     if(!cat||!cat.items.length) return input;
     const matched=cat.items.find(it=>it.title===current);
-    return `<div class="daypick" style="flex-wrap:wrap">
-        ${cat.items.map(it=>`<button type="button" class="day-toggle${it===matched?' on':''}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}">${esc(it.title)}</button>`).join("")}
+    const chip=it=>`<button type="button" class="day-toggle${it===matched?' on':''}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}">${esc(it.title)}</button>`;
+    const groups=[];
+    cat.items.forEach(it=>{ const s=it.section||""; let g=groups.find(x=>x.s===s); if(!g){g={s,items:[]};groups.push(g);} g.items.push(it); });
+    const body=groups.map(g=>{
+      const chips=`<div class="daypick" style="flex-wrap:wrap">${g.items.map(chip).join("")}</div>`;
+      if(!g.s) return chips;
+      const open=matched&&g.items.includes(matched);
+      return `<details class="cat-sec"${open?' open':''}><summary>${esc(g.s)}</summary>${chips}</details>`;
+    }).join("");
+    return `${body}
+      <div class="daypick" style="flex-wrap:wrap">
         <button type="button" class="day-toggle${!matched&&current?' on':''}" data-clesson="${targetId}" data-ctitle="">Escribir a mano</button>
       </div>
       <div id="${targetId}-wrap" style="margin-top:8px;${matched||!current?'display:none':''}">${input}</div>`;
@@ -1101,21 +1140,36 @@
     timeForm=apptForm=courseForm=undefined; timeDraft=null; openCourseId=null; logForm=undefined; logDraft=null; await save(); closeSettings(); render();
   }
 
-  /* ---------- catálogo de lecciones ---------- */
+  /* ---------- catálogo de lecciones: compartido entre cuentas ---------- */
   let catalogKey=null;
   function openCatalog(bookKey,title){
     catalogKey=bookKey;
-    if(!state.catalogs[bookKey]) state.catalogs[bookKey]={title,items:[]};
+    if(!state.catalogs[bookKey]) state.catalogs[bookKey]={title,items:[],updatedAt:0};
     document.getElementById("sheet").innerHTML=catalogHtml(bookKey);
     document.getElementById("overlay").classList.add("open");
     bindCatalog();
+    if(CURRENT_UID) refreshSharedCatalog(bookKey,title);
+  }
+  async function refreshSharedCatalog(bookKey,title){
+    const shared=await loadSharedCatalog(bookKey);
+    if(!shared || !Array.isArray(shared.items)) return;
+    const local=state.catalogs[bookKey];
+    if(local && (local.updatedAt||0)>=(shared.updatedAt||0)) return;
+    state.catalogs[bookKey]={title:shared.title||title||bookKey, items:shared.items, updatedAt:shared.updatedAt||0};
+    await writeLocal();
+    if(catalogKey===bookKey) refreshCatalogSheet();
+  }
+  async function persistCatalog(cat){
+    cat.updatedAt=Date.now();
+    await save();
+    if(CURRENT_UID) saveSharedCatalog(catalogKey,cat);
   }
   function closeCatalog(){ document.getElementById("overlay").classList.remove("open"); catalogKey=null; render(); }
   function catalogHtml(bookKey){
     const cat=state.catalogs[bookKey]||{title:bookKey,items:[]};
-    const rows=cat.items.length? cat.items.map((it,i)=>`
+    const rows=cat.items.length? cat.items.map((it,i)=>`${(it.section||"")!==((cat.items[i-1]||{}).section||"")||(i===0&&it.section)?`<div class="cat-sec-hd">${esc(it.section||"Sin sección")}</div>`:""}
       <div class="item"><span class="tag" style="background:var(--gold)"></span>
-        <div class="body"><div class="ttl" style="font-size:13px">${esc(String(it.n||i+1))}. ${esc(it.title)}</div></div>
+        <div class="body"><div class="ttl" style="font-size:13px">${it.n?esc(String(it.n))+". ":""}${esc(it.title)}</div></div>
         <div class="ctrls">
           <button class="icon-btn" data-catup="${it.id}" ${i===0?'disabled':''}>↑</button>
           <button class="icon-btn" data-catdown="${it.id}" ${i===cat.items.length-1?'disabled':''}>↓</button>
@@ -1135,6 +1189,11 @@
         </div>
         <div class="actions"><button class="btn btn-primary" id="addCatItem">+ Agregar</button></div>
       </div>
+      <div class="mini-form">
+        <label style="display:block;font-size:12px;color:var(--muted);font-weight:500;margin-bottom:6px">Importar varias a la vez (una lección por línea, el número al inicio es opcional; una línea que empieza con # inicia una sección)</label>
+        <textarea id="cat-bulk" rows="4" placeholder="# Sección 1&#10;01 Título de la lección 1&#10;02 Título de la lección 2&#10;Repaso sección 1"></textarea>
+        <div class="actions"><button class="btn btn-primary" id="importCatBulk">Importar lista</button></div>
+      </div>
     `;
   }
   function bindCatalog(){
@@ -1145,6 +1204,25 @@
     document.querySelectorAll("[data-catdel]").forEach(b=>b.onclick=()=>onDelCatalogItem(b.dataset.catdel));
     document.querySelectorAll("[data-catup]").forEach(b=>b.onclick=()=>onMoveCatalogItem(b.dataset.catup,-1));
     document.querySelectorAll("[data-catdown]").forEach(b=>b.onclick=()=>onMoveCatalogItem(b.dataset.catdown,1));
+    document.getElementById("importCatBulk").onclick=onImportCatalogBulk;
+  }
+  function parseCatalogBulk(text){
+    let section="";
+    const out=[];
+    text.split("\n").map(l=>l.trim()).filter(Boolean).forEach(line=>{
+      if(line.startsWith("#")){ section=line.replace(/^#+\s*/,""); return; }
+      const m=line.match(/^(\d{1,3})[.):]?\s+(.+)$/);
+      out.push(m? {n:+m[1], title:m[2].trim(), section} : {n:0, title:line, section});
+    });
+    return out;
+  }
+  async function onImportCatalogBulk(){
+    const cat=state.catalogs[catalogKey]; if(!cat)return;
+    const parsed=parseCatalogBulk(document.getElementById("cat-bulk").value);
+    if(!parsed.length){alert("Pega al menos una lección, una por línea.");return;}
+    if(cat.items.length && confirm(`Ya hay ${cat.items.length} lecciones en el catálogo. ¿Reemplazarlas por esta lista?\n\n(Cancelar = agregarlas al final)`)) cat.items=[];
+    parsed.forEach(p=>cat.items.push({id:uid(),n:p.n,title:p.title,section:p.section}));
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   function refreshCatalogSheet(){ document.getElementById("sheet").innerHTML=catalogHtml(catalogKey); bindCatalog(); }
   async function onAddCatalogItem(){
@@ -1153,27 +1231,27 @@
     const title=document.getElementById("cat-title").value.trim();
     if(!title){alert("Escribe el título de la lección.");return;}
     cat.items.push({id:uid(),n,title});
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   async function onEditCatalogItem(id){
     const cat=state.catalogs[catalogKey]; if(!cat)return;
     const it=cat.items.find(x=>x.id===id); if(!it)return;
     const title=prompt("Título de la lección:",it.title); if(title===null)return;
     it.title=title.trim()||it.title;
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   async function onDelCatalogItem(id){
     const cat=state.catalogs[catalogKey]; if(!cat)return;
     if(!confirm("¿Eliminar esta lección del catálogo?"))return;
     cat.items=cat.items.filter(x=>x.id!==id);
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   async function onMoveCatalogItem(id,dir){
     const cat=state.catalogs[catalogKey]; if(!cat)return;
     const i=cat.items.findIndex(x=>x.id===id); const j=i+dir;
     if(i<0||j<0||j>=cat.items.length)return;
     [cat.items[i],cat.items[j]]=[cat.items[j],cat.items[i]];
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
 
   /* ---------- time draft capture ---------- */
@@ -1317,7 +1395,7 @@
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
-    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book),c.book);};
+    const mc=document.getElementById("manageCatalog"); if(mc)mc.onclick=()=>{captureProfile();openCatalog(normKey(c.book||BOOK),c.book||BOOK);};
     document.querySelectorAll("[data-clesson]").forEach(b=>b.onclick=()=>{
       const id=b.dataset.clesson, title=b.dataset.ctitle;
       document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
