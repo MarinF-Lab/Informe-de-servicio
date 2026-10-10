@@ -346,6 +346,16 @@
     catch(e){ console.warn("No se pudo guardar en la nube:", e && e.code || e); return false; }
   }
 
+  /* ---------- Catálogos de lecciones: compartidos entre todas las cuentas ---------- */
+  async function loadSharedCatalog(bookKey){
+    try{ const snap = await getDoc(doc(db,"catalogs",bookKey)); return snap.exists()? snap.data() : null; }
+    catch(e){ return null; }
+  }
+  async function saveSharedCatalog(bookKey, cat){
+    try{ await setDoc(doc(db,"catalogs",bookKey), clean({title:cat.title||bookKey, items:cat.items||[], updatedAt:cat.updatedAt||Date.now()}), { merge:true }); return true; }
+    catch(e){ console.warn("No se pudo compartir el catálogo:", e && e.code || e); return false; }
+  }
+
   function fbError(code){
     return ({
       "auth/email-already-in-use":"Ese nombre de usuario ya está en uso.",
@@ -451,7 +461,7 @@
       goalHours:p.goalHours||0, goalYearHours:p.goalYearHours||0,
       courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[]})),
       appointments:Array.isArray(p.appointments)?p.appointments:[],
-      catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||""}))}])):{},
+      catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||""})),updatedAt:v.updatedAt||0}])):{},
       alarmsOn:!!p.alarmsOn, alarmLead:p.alarmLead||0,
       stopwatch:p.stopwatch||{running:false,startEpoch:0,accum:0},
       theme:p.theme||null, mode:p.mode==="dark"?"dark":"light", paletteIndex:Number.isInteger(p.paletteIndex)?p.paletteIndex:0, updatedAt:Number(p.updatedAt)||0};
@@ -482,6 +492,22 @@
     else if(localState){ state=normalize(localState); if(CURRENT_UID && lT>cT){ cloudPending=true; cloudSave(CURRENT_UID,state).then(ok=>{cloudPending=!ok;updateConnBadge();}); } }
     else if(cloudState){ state=normalize(cloudState); await writeLocal(); }
     else { state=defaultState(); }
+    if(CURRENT_UID) await syncSharedCatalogs();
+  }
+  async function syncSharedCatalogs(){
+    const keys=[...new Set(state.courses.map(c=>normKey(c.book)).filter(Boolean))];
+    let changed=false;
+    for(const k of keys){
+      const shared=await loadSharedCatalog(k);
+      if(shared && Array.isArray(shared.items)){
+        const local=state.catalogs[k];
+        if(!local || (shared.updatedAt||0) > (local.updatedAt||0)){
+          state.catalogs[k]={title:shared.title||k, items:shared.items, updatedAt:shared.updatedAt||0};
+          changed=true;
+        }
+      }
+    }
+    if(changed) await writeLocal();
   }
   let cloudTimer=null, cloudPending=false;
   async function save(){
@@ -1101,14 +1127,29 @@
     timeForm=apptForm=courseForm=undefined; timeDraft=null; openCourseId=null; logForm=undefined; logDraft=null; await save(); closeSettings(); render();
   }
 
-  /* ---------- catálogo de lecciones ---------- */
+  /* ---------- catálogo de lecciones: compartido entre cuentas ---------- */
   let catalogKey=null;
   function openCatalog(bookKey,title){
     catalogKey=bookKey;
-    if(!state.catalogs[bookKey]) state.catalogs[bookKey]={title,items:[]};
+    if(!state.catalogs[bookKey]) state.catalogs[bookKey]={title,items:[],updatedAt:0};
     document.getElementById("sheet").innerHTML=catalogHtml(bookKey);
     document.getElementById("overlay").classList.add("open");
     bindCatalog();
+    if(CURRENT_UID) refreshSharedCatalog(bookKey,title);
+  }
+  async function refreshSharedCatalog(bookKey,title){
+    const shared=await loadSharedCatalog(bookKey);
+    if(!shared || !Array.isArray(shared.items)) return;
+    const local=state.catalogs[bookKey];
+    if(local && (local.updatedAt||0)>=(shared.updatedAt||0)) return;
+    state.catalogs[bookKey]={title:shared.title||title||bookKey, items:shared.items, updatedAt:shared.updatedAt||0};
+    await writeLocal();
+    if(catalogKey===bookKey) refreshCatalogSheet();
+  }
+  async function persistCatalog(cat){
+    cat.updatedAt=Date.now();
+    await save();
+    if(CURRENT_UID) saveSharedCatalog(catalogKey,cat);
   }
   function closeCatalog(){ document.getElementById("overlay").classList.remove("open"); catalogKey=null; render(); }
   function catalogHtml(bookKey){
@@ -1166,7 +1207,7 @@
     const parsed=parseCatalogBulk(document.getElementById("cat-bulk").value);
     if(!parsed.length){alert("Pega al menos una lección, una por línea.");return;}
     parsed.forEach(p=>cat.items.push({id:uid(),n:p.n,title:p.title}));
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   function refreshCatalogSheet(){ document.getElementById("sheet").innerHTML=catalogHtml(catalogKey); bindCatalog(); }
   async function onAddCatalogItem(){
@@ -1175,27 +1216,27 @@
     const title=document.getElementById("cat-title").value.trim();
     if(!title){alert("Escribe el título de la lección.");return;}
     cat.items.push({id:uid(),n,title});
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   async function onEditCatalogItem(id){
     const cat=state.catalogs[catalogKey]; if(!cat)return;
     const it=cat.items.find(x=>x.id===id); if(!it)return;
     const title=prompt("Título de la lección:",it.title); if(title===null)return;
     it.title=title.trim()||it.title;
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   async function onDelCatalogItem(id){
     const cat=state.catalogs[catalogKey]; if(!cat)return;
     if(!confirm("¿Eliminar esta lección del catálogo?"))return;
     cat.items=cat.items.filter(x=>x.id!==id);
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
   async function onMoveCatalogItem(id,dir){
     const cat=state.catalogs[catalogKey]; if(!cat)return;
     const i=cat.items.findIndex(x=>x.id===id); const j=i+dir;
     if(i<0||j<0||j>=cat.items.length)return;
     [cat.items[i],cat.items[j]]=[cat.items[j],cat.items[i]];
-    await save(); refreshCatalogSheet();
+    await persistCatalog(cat); refreshCatalogSheet();
   }
 
   /* ---------- time draft capture ---------- */
