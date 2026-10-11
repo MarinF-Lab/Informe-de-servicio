@@ -200,7 +200,7 @@
   .cat-sec summary::after{content:"›";margin-left:auto;font-size:20px;line-height:1;color:var(--muted);transition:transform .2s}
   .cat-sec[open] summary::after{transform:rotate(90deg)}
   .cat-sec .scount{font-size:12.5px;font-weight:600;color:var(--pine);background:var(--paper);border-radius:999px;padding:2px 9px}
-  .lrows{max-height:520px;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;padding:0 10px}
+  .lrows{overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;padding:0 10px}
   .lrow{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line)}
   .lrow:last-child{border-bottom:none}
   .lchk{flex:0 0 28px;width:28px;height:28px;border-radius:50%;border:2px solid var(--line);background:var(--paper);color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit}
@@ -210,7 +210,19 @@
   .lrow.done .lt{color:var(--muted)}
   .lsel.on{background:var(--base);font-weight:600}
   .lsel.on .lt{color:var(--ink)}
+  .lsel .lt{flex:1;min-width:0}
   .lsel .lp{display:block;font-size:12.5px;font-weight:500;color:var(--gold);margin-top:3px}
+  .lsel .lp:empty{display:none}
+  .lsel .lp.ok{color:var(--pine)}
+  .lsel .lchev{align-self:center;color:var(--muted);font-size:18px;transition:transform .2s}
+  .lrow.open .lchev{transform:rotate(90deg)}
+  .lrow.open .lsel{background:var(--base)}
+  .lpanel{padding:2px 0 12px;border-bottom:1px solid var(--line)}
+  .prog{margin:0 0 14px}
+  .prog-hd{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--muted);margin-bottom:6px}
+  .prog-hd b{font-size:14px;color:var(--ink)}
+  .prog-bar{height:8px;border-radius:999px;background:var(--base);overflow:hidden}
+  .prog-bar span{display:block;height:100%;background:var(--pine);border-radius:999px;transition:width .3s}
   .cat-sec-hd{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
   .day-toggle{flex:1;min-width:40px;font-family:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:9px;padding:8px 0;background:var(--paper);color:var(--muted);cursor:pointer;text-align:center}
   .day-toggle.on{background:var(--pine);color:#fff;border-color:var(--pine)}
@@ -461,7 +473,7 @@
   let viewY=today.getFullYear(), viewM=today.getMonth();
   let resY=svcStartOf(today.getFullYear(),today.getMonth());  // resY = año de servicio (empieza en septiembre)
   let selDate=iso(today);
-  let timeForm=undefined, apptForm=undefined, courseForm=undefined, timeDraft=null, openCourseId=null, logForm=undefined, logDraft=null, bulkForm=undefined;
+  let timeForm=undefined, apptForm=undefined, courseForm=undefined, timeDraft=null, openCourseId=null, logForm=undefined, logDraft=null, bulkForm=undefined, openLesson=null, openSecs=null, uiCourse=null;
   const hasStore=typeof window.storage!=="undefined"&&window.storage;
   const fired=new Set();
   let audioCtx=null;
@@ -474,10 +486,19 @@
   function fmtClock(ms){const s=Math.max(0,Math.floor(ms/1000));return `${pad(Math.floor(s/3600))}:${pad(Math.floor(s%3600/60))}:${pad(s%60)}`;}
   function longDate(s){const d=parseISO(s);return `${DIAS[monIdx(d)]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;}
 
+  function normDone(c){
+    const log=Array.isArray(c.log)?c.log:[];
+    const fin=e=>e.status!=="missed"&&e.lesson&&e.finished!==false;
+    const lastDate=t=>log.filter(e=>fin(e)&&e.lesson===t).map(e=>e.date).sort().pop()||"";
+    const src=Array.isArray(c.done)?c.done:log.filter(fin).map(e=>e.lesson);
+    const out=[];
+    src.forEach(x=>{ const title=typeof x==="string"?x:(x&&x.title); if(title&&!out.some(o=>o.title===title)) out.push({title,date:(x&&x.date)||lastDate(title)}); });
+    return out;
+  }
   function normalize(p){
     return {entries:Array.isArray(p.entries)?p.entries:[],
       goalHours:p.goalHours||0, goalYearHours:p.goalYearHours||0,
-      courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[],done:Array.isArray(c.done)?c.done:(Array.isArray(c.log)?c.log:[]).filter(e=>e.status!=="missed"&&e.lesson).map(e=>e.lesson)})),
+      courses:(Array.isArray(p.courses)?p.courses:[]).map(c=>({...c,weekdays:Array.isArray(c.weekdays)?c.weekdays:(typeof c.weekday==="number"?[c.weekday]:[]),log:Array.isArray(c.log)?c.log:[],done:normDone(c)})),
       appointments:Array.isArray(p.appointments)?p.appointments:[],
       catalogs:(p.catalogs&&typeof p.catalogs==="object")?Object.fromEntries(Object.entries(p.catalogs).filter(([,v])=>v&&Array.isArray(v.items)).map(([k,v])=>[k,{title:v.title||k,items:v.items.map(it=>({id:it.id||uid(),n:it.n||0,title:it.title||"",section:it.section||""})),updatedAt:v.updatedAt||0}])):{},
       alarmsOn:!!p.alarmsOn, alarmLead:p.alarmLead||0,
@@ -990,16 +1011,6 @@
     const sched=wds.length?wds.join(", "):"Sin día fijo";
     const init=(c.name||"?").trim().charAt(0).toUpperCase();
     const paused=c.active===false;
-    const log=(c.log||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
-    const logHtml=log.length? log.map(e=>{const d=parseISO(e.date);
-      const dateStr=`${d.getDate()} ${MES_ABR[d.getMonth()]} ${d.getFullYear()}`;
-      const missed=e.status==="missed";
-      const parts=[];
-      if(missed){ parts.push("No se realizó"); if(e.reason)parts.push(e.reason); }
-      else { const hh=[]; if(e.lesson)hh.push(e.finished===false?`${e.lesson} (sin terminar)`:e.lesson); if(e.point)hh.push(e.point); if(hh.length)parts.push(hh.join(" · ")); if(e.note)parts.push(e.note); }
-      return `<div class="item"><span class="tag" style="background:${missed?'var(--danger)':'var(--gold)'}"></span>
-        <div class="body"><div class="ttl" style="font-size:13px">${dateStr}</div><div class="sub">${esc(parts.join(" · "))||"—"}</div></div>
-        <div class="ctrls"><button class="icon-btn del" data-lgdel="${e.id}">🗑</button></div></div>`;}).join("") : `<div class="none">Aún no hay clases registradas.</div>`;
     return `
     <div class="pbar"><button id="backCursos">‹ Cursos</button></div>
     <section class="card pad">
@@ -1019,32 +1030,22 @@
     </section>
 
     <section class="card pad">
-      <div class="group-title" style="padding:0;margin:0 0 10px">Plan de estudio</div>
+      <div class="group-title" style="padding:0;margin:0 0 10px">Avance del estudio</div>
       <div class="field"><label>Libro o publicación que se estudia</label><select id="p-book"><option value="${BOOK}">${BOOK}</option></select></div>
-      <div class="field"><label>Lección</label>${lessonPickerHtml("p-lesson",c.book||BOOK,c.lesson,c.done,c.point)}</div>
-      <div class="field"><label>Pendiente para la próxima (actividad o pregunta)</label><textarea id="p-pending" rows="3" placeholder="Ej. Responder la pregunta del punto 4; ver el video de la lección">${esc(c.pending||"")}</textarea></div>
-      <div class="field" style="margin-bottom:0"><label>Notas</label><textarea id="p-notes" rows="3" placeholder="Intereses, familia, observaciones…">${esc(c.notes||"")}</textarea></div>
-    </section>
-
-    <section class="card pad">
-      <div class="group-title" style="padding:0;margin:0 0 6px">Historial de clases</div>
-      ${logHtml}
-      ${logForm? logFormHtml() : `<div class="addrow"><button class="add-btn" id="addLog">+ Agregar nota de clase</button></div>`}
+      ${progressHtml(c)}
     </section>`;
   }
-  function logFormHtml(){
-    const c=state.courses.find(x=>x.id===openCourseId);
+  function classFormHtml(){
     const d=logDraft||{date:iso(today),status:"done",lesson:"",point:"",note:"",reason:""};
     const done=d.status!=="missed", fin=d.finished!==false;
     const fields=done? `
-      <div class="field"><label>Lección</label>${lessonSelectHtml("lg-lesson",(c&&c.book)||BOOK,d.lesson,c&&c.done)}</div>
       <div class="field"><label>¿Terminaron la lección?</label>
         <div class="daypick">
           <button type="button" class="day-toggle${fin?' on':''}" data-lgfin="1" style="flex:1">Sí, se terminó</button>
           <button type="button" class="day-toggle${!fin?' on':''}" data-lgfin="0" style="flex:1">No, quedó a medias</button>
         </div>
       </div>
-      <div class="field"><label>${fin?"Punto / párrafo":"¿Hasta qué punto llegaron?"}</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>
+      ${fin?"":`<div class="field"><label>¿Hasta qué punto llegaron?</label><input type="text" id="lg-point" maxlength="40" value="${esc(d.point||"")}" placeholder="Ej. Punto 3"></div>`}
       <div class="field" style="margin-bottom:0"><label>¿Qué se vio o quedó pendiente?</label><textarea id="lg-note" rows="3" placeholder="Avance, tarea asignada, pregunta…">${esc(d.note||"")}</textarea></div>`
     : `<div class="field" style="margin-bottom:0"><label>Motivo por el que no se realizó</label><textarea id="lg-reason" rows="3" placeholder="Ej. El estudiante no pudo; lluvia; viaje…">${esc(d.reason||"")}</textarea></div>`;
     return `<div class="mini-form">
@@ -1068,34 +1069,63 @@
     items.forEach(it=>{ const s=it.section||""; let g=groups.find(x=>x.s===s); if(!g){g={s,items:[]};groups.push(g);} g.items.push(it); });
     return groups;
   }
-  function lessonSelectHtml(id,book,current,done){
-    const cat=state.catalogs[normKey(book)];
-    if(!cat||!cat.items.length) return `<input type="text" id="${id}" maxlength="80" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
-    const doneSet=new Set(done||[]);
-    const opt=it=>`<option value="${esc(it.title)}"${it.title===current?" selected":""}>${it.n?pad(it.n)+" · ":""}${esc(it.title)}${doneSet.has(it.title)?" ✓":""}</option>`;
-    const body=groupBySection(cat.items).map(g=>g.s?`<optgroup label="${esc(g.s)}">${g.items.map(opt).join("")}</optgroup>`:g.items.map(opt).join("")).join("");
-    const other=current&&!cat.items.some(it=>it.title===current)? `<option value="${esc(current)}" selected>${esc(current)}</option>` : "";
-    return `<select id="${id}"><option value=""${!current?" selected":""}>Elige una lección…</option>${other}${body}</select>`;
+  function shortDate(ds){ if(!ds) return ""; const d=parseISO(ds); return `${d.getDate()} ${MES_ABR[d.getMonth()]}${d.getFullYear()!==today.getFullYear()?" "+d.getFullYear():""}`; }
+  function doneInfo(c,title){ return (c.done||[]).find(o=>o.title===title); }
+  function lessonStatus(c,title){
+    const dn=doneInfo(c,title);
+    if(dn) return {cls:"lp ok", text:`✓ Terminada${dn.date?" el "+shortDate(dn.date):""}`};
+    if(title===c.lesson) return {cls:"lp", text:`en curso${c.point?" · "+c.point:""}`};
+    return {cls:"lp", text:""};
   }
-  function lessonPickerHtml(targetId,book,current,done,progress){
-    const cat=state.catalogs[normKey(book)];
-    const input=`<input type="text" id="${targetId}" maxlength="80" value="${esc(current||"")}" placeholder="Ej. Lección 12">`;
-    if(!cat||!cat.items.length) return input;
-    const doneSet=new Set(done||[]);
-    const matched=cat.items.find(it=>it.title===current);
+  function progressCounts(c){
+    const cat=state.catalogs[normKey(c.book||BOOK)], items=cat?cat.items:[];
+    return {n:items.filter(it=>doneInfo(c,it.title)).length, total:items.length};
+  }
+  function progressBarHtml(c){
+    const {n,total}=progressCounts(c);
+    return `<div class="prog"><div class="prog-hd"><span>Avance</span><b>${n} de ${total} lecciones</b></div><div class="prog-bar"><span style="width:${total?Math.round(n/total*100):0}%"></span></div></div>`;
+  }
+  function classRowHtml(e,showLesson){
+    const missed=e.status==="missed";
+    const head=missed? "No se realizó" : e.finished===false? `A medias${e.point?" · "+e.point:""}` : e.finished===true? "Terminada" : "Clase";
+    const extra=missed? (e.reason||"") : [showLesson?e.lesson:"",e.finished===undefined?e.point:"",e.note].filter(Boolean).join(" · ");
+    const d=parseISO(e.date);
+    return `<div class="item"><span class="tag" style="background:${missed?"var(--danger)":"var(--gold)"}"></span>
+      <div class="body"><div class="ttl" style="font-size:13px">${d.getDate()} ${MES_ABR[d.getMonth()]} ${d.getFullYear()} · ${esc(head)}</div>${extra?`<div class="sub">${esc(extra)}</div>`:""}</div>
+      <div class="ctrls"><button class="icon-btn del" data-lgdel="${e.id}">🗑</button></div></div>`;
+  }
+  function progressHtml(c){
+    const cat=state.catalogs[normKey(c.book||BOOK)];
+    const items=cat?cat.items:[];
+    const titles=new Set(items.map(it=>it.title));
+    const log=(c.log||[]).map((e,i)=>({e,i})).sort((a,b)=>b.e.date.localeCompare(a.e.date)||b.i-a.i).map(x=>x.e);
+    if(uiCourse!==c.id){
+      uiCourse=c.id; openLesson=null;
+      const cur=items.find(it=>it.title===c.lesson);
+      openSecs=new Set(cur&&cur.section?[cur.section]:[]);
+    }
     const row=it=>{
-      const ok=doneSet.has(it.title);
-      const chk=`<button type="button" class="lchk" data-ldone="${esc(it.title)}" aria-label="Marcar como completada">${ok?"✓":""}</button>`;
-      return `<div class="lrow${ok?" done":""}">${chk}<button type="button" class="lsel${it===matched?" on":""}" data-clesson="${targetId}" data-ctitle="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}${it===matched&&!ok&&progress?`<span class="lp">en curso · ${esc(progress)}</span>`:""}</span></button></div>`;
+      const ok=!!doneInfo(c,it.title), cur=it.title===c.lesson, open=it.title===openLesson, st=lessonStatus(c,it.title);
+      const classes=log.filter(e=>e.lesson===it.title);
+      const panel=open? `<div class="lpanel">
+          ${classes.length? classes.map(e=>classRowHtml(e,false)).join("") : `<div class="none">Sin clases registradas en esta lección.</div>`}
+          ${logForm&&logDraft&&logDraft.lesson===it.title? classFormHtml() : `<div class="addrow"><button class="add-btn" data-lreg="${esc(it.title)}">+ Registrar clase</button></div>`}
+        </div>` : "";
+      return `<div class="lrow${ok?" done":""}${cur?" cur":""}${open?" open":""}">
+          <button type="button" class="lchk" data-ldone="${esc(it.title)}" aria-label="Marcar como completada">${ok?"✓":""}</button>
+          <button type="button" class="lsel${cur?" on":""}" data-lopen="${esc(it.title)}"><span class="ln">${it.n?pad(it.n):""}</span><span class="lt">${esc(it.title)}<span class="${st.cls}">${esc(st.text)}</span></span><span class="lchev">›</span></button>
+        </div>${panel}`;
     };
-    const body=groupBySection(cat.items).map(g=>{
+    const body=groupBySection(items).map(g=>{
       const rows=`<div class="lrows">${g.items.map(row).join("")}</div>`;
       if(!g.s) return `<div class="cat-sec">${rows}</div>`;
-      const n=g.items.filter(it=>doneSet.has(it.title)).length;
-      const open=matched&&g.items.includes(matched);
-      return `<details class="cat-sec"${open?" open":""}><summary>${esc(g.s)}<span class="scount"><span class="lcount">${n}</span>/${g.items.length}</span></summary>${rows}</details>`;
+      const n=g.items.filter(it=>doneInfo(c,it.title)).length;
+      return `<details class="cat-sec" data-sec="${esc(g.s)}"${openSecs.has(g.s)?" open":""}><summary>${esc(g.s)}<span class="scount"><span class="lcount">${n}</span>/${g.items.length}</span></summary>${rows}</details>`;
     }).join("");
-    return `${body}<input type="hidden" id="${targetId}" value="${esc(current||"")}">`;
+    const others=log.filter(e=>!titles.has(e.lesson));
+    const otherHtml=others.length? `<details class="cat-sec" data-sec="__otras__"${openSecs.has("__otras__")?" open":""}><summary>Otras clases<span class="scount">${others.length}</span></summary><div class="lrows">${others.map(e=>classRowHtml(e,true)).join("")}</div></details>` : "";
+    if(!items.length) return `<div class="none">Las lecciones se cargarán cuando haya conexión a internet.</div>${otherHtml}`;
+    return `${progressBarHtml(c)}${body}${otherHtml}`;
   }
 
   /* ---------- settings ---------- */
@@ -1413,50 +1443,58 @@
     const c=state.courses.find(x=>x.id===openCourseId);
     if(!c){ openCourseId=null; render(); return; }
     const back=document.getElementById("backCursos"); if(back)back.onclick=()=>{captureProfile();openCourseId=null;courseForm=undefined;logForm=undefined;render();};
-    [["p-book","book"],["p-lesson","lesson"],["p-pending","pending"],["p-notes","notes"]].forEach(([id,key])=>{
-      const el=document.getElementById(id); if(el) el.onchange=async()=>{c[key]=el.value;await save();};
-    });
+    const pb=document.getElementById("p-book"); if(pb) pb.onchange=async()=>{c.book=pb.value;await save();};
     const ep=document.getElementById("editProfile"); if(ep)ep.onclick=()=>{captureProfile();courseForm={edit:openCourseId};render();};
     const pt=document.getElementById("pToggle"); if(pt)pt.onclick=()=>toggleCourse(openCourseId);
     const pd=document.getElementById("pDel"); if(pd)pd.onclick=async()=>{ if(!confirm("¿Eliminar este curso y su plan?"))return; state.courses=state.courses.filter(x=>x.id!==openCourseId); openCourseId=null;courseForm=undefined;logForm=undefined; await save(); render(); };
-    const al=document.getElementById("addLog"); if(al)al.onclick=()=>{captureProfile();logDraft={date:iso(today),status:"done",finished:true,lesson:c.lesson||"",point:c.point||"",note:"",reason:""};logForm={edit:null};render();};
     document.querySelectorAll("[data-lgstatus]").forEach(b=>b.onclick=()=>{captureLogDraft();logDraft.status=b.dataset.lgstatus;render();});
     document.querySelectorAll("[data-lgfin]").forEach(b=>b.onclick=()=>{captureLogDraft();logDraft.finished=b.dataset.lgfin==="1";render();});
     const sl=document.getElementById("saveLog"); if(sl)sl.onclick=onSaveLog;
     const cl=document.getElementById("cancelLog"); if(cl)cl.onclick=()=>{logForm=undefined;logDraft=null;render();};
     document.querySelectorAll("[data-lgdel]").forEach(b=>b.onclick=()=>delLog(b.dataset.lgdel));
+    document.querySelectorAll("[data-lopen]").forEach(b=>b.onclick=()=>{
+      const t=b.dataset.lopen;
+      openLesson= openLesson===t? null : t;
+      if(logForm&&logDraft&&logDraft.lesson!==openLesson){ logForm=undefined; logDraft=null; }
+      render();
+      const r=document.querySelector(".lrow.open"); if(r) r.scrollIntoView({block:"nearest",behavior:"smooth"});
+    });
+    document.querySelectorAll("[data-lreg]").forEach(b=>b.onclick=()=>{
+      const t=b.dataset.lreg;
+      logDraft={date:iso(today),status:"done",finished:true,lesson:t,point:t===c.lesson?(c.point||""):"",note:"",reason:""};
+      logForm={edit:null}; render();
+      const f=document.querySelector(".lpanel .mini-form"); if(f) f.scrollIntoView({block:"nearest",behavior:"smooth"});
+    });
     document.querySelectorAll("[data-ldone]").forEach(b=>b.onclick=async()=>{
-      const t=b.dataset.ldone; c.done=Array.isArray(c.done)?c.done:[];
-      const on=!c.done.includes(t);
-      c.done=on? [...c.done,t] : c.done.filter(x=>x!==t);
-      b.closest(".lrow").classList.toggle("done",on); b.textContent=on?"✓":"";
+      const t=b.dataset.ldone;
+      c.done= doneInfo(c,t)? c.done.filter(o=>o.title!==t) : [...(c.done||[]),{title:t,date:iso(today)}];
+      const on=!!doneInfo(c,t), r=b.closest(".lrow");
+      r.classList.toggle("done",on); b.textContent=on?"✓":"";
+      const st=lessonStatus(c,t), lp=r.querySelector(".lp"); lp.className=st.cls; lp.textContent=st.text;
       const det=b.closest("details"); if(det){ const cnt=det.querySelector(".lcount"); if(cnt) cnt.textContent=det.querySelectorAll(".lrow.done").length; }
+      const pr=document.querySelector(".prog"); if(pr) pr.outerHTML=progressBarHtml(c);
       await save();
     });
-    document.querySelectorAll("[data-clesson]").forEach(b=>b.onclick=()=>{
-      const id=b.dataset.clesson, title=b.dataset.ctitle;
-      document.querySelectorAll(`[data-clesson="${id}"]`).forEach(x=>x.classList.remove("on"));
-      b.classList.add("on");
-      const inp=document.getElementById(id);
-      if(inp){ inp.value=title; inp.dispatchEvent(new Event("change")); }
-    });
     const fitTen=list=>{
+      if(list.querySelector(".lpanel")){ list.style.maxHeight="none"; list.scrollTop=0; return; }
       const rows=list.querySelectorAll(".lrow");
       list.style.maxHeight= rows.length>10 && rows[10].offsetTop? rows[10].offsetTop+"px" : "";
-      const cur=list.querySelector(".lsel.on"); if(cur) list.scrollTop=Math.max(0,cur.closest(".lrow").offsetTop-8);
+      const cur=list.querySelector(".lrow.cur"); if(cur) list.scrollTop=Math.max(0,cur.offsetTop-8);
     };
     document.querySelectorAll(".lrows").forEach(fitTen);
-    document.querySelectorAll("details.cat-sec").forEach(d=>d.addEventListener("toggle",()=>{ if(d.open) fitTen(d.querySelector(".lrows")); }));
+    document.querySelectorAll("details.cat-sec[data-sec]").forEach(d=>d.addEventListener("toggle",()=>{
+      if(d.open){ openSecs.add(d.dataset.sec); const l=d.querySelector(".lrows"); if(l) fitTen(l); }
+      else openSecs.delete(d.dataset.sec);
+    }));
   }
   function captureProfile(){
     const c=state.courses.find(x=>x.id===openCourseId); if(!c)return;
-    [["p-book","book"],["p-lesson","lesson"],["p-pending","pending"],["p-notes","notes"]].forEach(([id,key])=>{const el=document.getElementById(id); if(el) c[key]=el.value;});
+    const pb=document.getElementById("p-book"); if(pb) c.book=pb.value;
   }
   function captureLogDraft(){
     if(!logDraft)return;
     const g=id=>{const el=document.getElementById(id);return el?el.value:undefined;};
     const date=g("lg-date"); if(date!==undefined)logDraft.date=date;
-    const lesson=g("lg-lesson"); if(lesson!==undefined)logDraft.lesson=lesson;
     const point=g("lg-point"); if(point!==undefined)logDraft.point=point;
     const note=g("lg-note"); if(note!==undefined)logDraft.note=note;
     const reason=g("lg-reason"); if(reason!==undefined)logDraft.reason=reason;
@@ -1466,20 +1504,19 @@
     captureLogDraft(); captureProfile();
     const d=logDraft, date=d.date||iso(today);
     c.log=c.log||[];
+    const lesson=(d.lesson||"").trim();
     if(d.status==="missed"){
       const reason=(d.reason||"").trim();
       if(!reason){alert("Escribe el motivo por el que no se realizó.");return;}
-      c.log.push({id:uid(),date,status:"missed",reason});
+      c.log.push({id:uid(),date,status:"missed",reason,lesson});
     } else {
-      const lesson=(d.lesson||"").trim(), point=(d.point||"").trim(), note=(d.note||"").trim();
-      if(!lesson&&!point&&!note){alert("Anota qué se vio en la clase.");return;}
-      const finished=d.finished!==false;
+      const finished=d.finished!==false, point=finished?"":(d.point||"").trim(), note=(d.note||"").trim();
       c.log.push({id:uid(),date,status:"done",lesson,point,note,finished});
-      if(lesson) c.lesson=lesson;
+      c.lesson=lesson;
       if(finished){
         c.point="";
-        if(lesson){ c.done=Array.isArray(c.done)?c.done:[]; if(!c.done.includes(lesson)) c.done.push(lesson); }
-      } else if(point) c.point=point;
+        if(!doneInfo(c,lesson)) c.done=[...(c.done||[]),{title:lesson,date}];
+      } else c.point=point;
     }
     logForm=undefined; logDraft=null; await save(); render();
   }
